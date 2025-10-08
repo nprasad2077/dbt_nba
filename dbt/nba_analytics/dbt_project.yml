@@ -1,0 +1,127 @@
+name: 'nba_analytics'
+version: '1.0.0'
+config-version: 2
+
+# This setting configures which "profile" dbt uses for this project.
+profile: 'nba_analytics'
+
+# These configurations specify where dbt should look for different types of files.
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:         # directories to be removed by `dbt clean`
+  - "target"
+  - "dbt_packages"
+
+# Configuring models
+models:
+  nba_analytics:
+    # Global configurations
+    +materialized: view
+    +on_schema_change: "sync_all_columns"
+    
+    # Staging layer (Bronze) - Views for raw data with minimal transformation
+    staging:
+      +materialized: view
+      +schema: staging
+      +tags: ['bronze', 'staging']
+      +docs:
+        node_color: "#CD7F32"  # Bronze color
+      
+    # Intermediate layer (Silver) - Views/tables with business logic
+    intermediate:
+      +materialized: table
+      +schema: intermediate
+      +tags: ['silver', 'intermediate']
+      +docs:
+        node_color: "#C0C0C0"  # Silver color
+      # Performance optimizations
+      +indexes:
+        - columns: ['game_id']
+        - columns: ['date']
+        - columns: ['player_id']
+        - columns: ['team']
+          
+    # Marts layer (Gold) - Final analytics tables
+    marts:
+      +materialized: table
+      +schema: marts
+      +tags: ['gold', 'marts']
+      +docs:
+        node_color: "#FFD700"  # Gold color
+      
+      # Dimension tables
+      dimensions:
+        +materialized: table
+        +tags: ['dimension']
+        
+      # Fact tables
+      facts:
+        +materialized: incremental
+        +on_schema_change: "sync_all_columns"
+        +unique_key: ['game_id', 'player_id']  # Adjust per model
+        +tags: ['fact']
+        
+      # Analytics marts
+      analytics:
+        +materialized: table
+        +tags: ['analytics']
+
+# Snapshot configurations
+snapshots:
+  nba_analytics:
+    +target_schema: snapshots
+    +strategy: timestamp
+    +updated_at: updated_at
+    +invalidate_hard_deletes: true
+
+# Test configurations
+tests:
+  nba_analytics:
+    +severity: warn  # warn or error
+    +store_failures: true
+    +schema: test_results
+
+# Seed configurations
+seeds:
+  nba_analytics:
+    +schema: seeds
+    +quote_columns: true
+
+# Variable configurations
+vars:
+  # Date variables for incremental loads
+  start_date: '2013-10-01'
+  end_date: '2025-10-08'
+  
+  # Performance thresholds for analytics
+  min_games_played: 10
+  min_minutes_per_game: 15
+  clutch_time_minutes: 5
+  close_game_margin: 5
+  
+  # Season definitions
+  regular_season_start_month: 10
+  regular_season_end_month: 4
+  playoff_start_month: 4
+  playoff_end_month: 6
+
+# Quoting configurations
+quoting:
+  database: false
+  schema: false
+  identifier: false
+
+# Log configurations
+log:
+  colorize: true
+  format: json
+
+# Query comments for debugging
+query-comment:
+  comment: "/* dbt model: {{ model.name }} | run at: {{ run_started_at }} */"
+  append: true
