@@ -11,7 +11,7 @@ nba_analytics:
       schema: analytics_dev
       threads: 4
       keepalives_idle: 0
-      search_path: [analytics_dev, public]
+      search_path: "analytics_dev, public"
       
     prod:
       type: postgres
@@ -23,7 +23,7 @@ nba_analytics:
       schema: analytics
       threads: 8
       keepalives_idle: 0
-      search_path: [analytics, public]
+      search_path: "analytics, public"
       
     test:
       type: postgres
@@ -35,4 +35,4 @@ nba_analytics:
       schema: analytics_test
       threads: 2
       keepalives_idle: 0
-      search_path: [analytics_test, public]
+      search_path: "analytics_test, public"

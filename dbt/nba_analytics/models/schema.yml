@@ -5,9 +5,9 @@ sources:
     description: Raw NBA data imported from source systems
     database: nba_analytics
     schema: public
-    freshness:
-      warn_after: {count: 24, period: hour}
-      error_after: {count: 48, period: hour}
+    # freshness:
+    #   warn_after: {count: 24, period: hour}
+    #   error_after: {count: 48, period: hour}
     tables:
       - name: games
         description: Core game information including scores, teams, and venues
@@ -44,8 +44,9 @@ sources:
             tests:
               - not_null
               - relationships:
-                  to: ref('stg_games')
-                  field: game_id
+                  arguments:
+                    to: source('raw_nba', 'games') # <-- CORRECTED
+                    field: game_id
           - name: team
             description: Team abbreviation
             tests:

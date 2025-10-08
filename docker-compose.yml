@@ -83,7 +83,7 @@ services:
   dbt_runner:
     build:
       context: .
-      dockerfile: Dockerfile.dbt
+      dockerfile: Dockerfile
     container_name: nba_dbt_runner
     environment:
       DBT_PROFILES_DIR: /usr/app/dbt

@@ -23,7 +23,7 @@ models:
     # Global configurations
     +materialized: view
     +on_schema_change: "sync_all_columns"
-    
+
     # Staging layer (Bronze) - Views for raw data with minimal transformation
     staging:
       +materialized: view
@@ -31,7 +31,7 @@ models:
       +tags: ['bronze', 'staging']
       +docs:
         node_color: "#CD7F32"  # Bronze color
-      
+
     # Intermediate layer (Silver) - Views/tables with business logic
     intermediate:
       +materialized: table
@@ -45,7 +45,7 @@ models:
         - columns: ['date']
         - columns: ['player_id']
         - columns: ['team']
-          
+
     # Marts layer (Gold) - Final analytics tables
     marts:
       +materialized: table
@@ -53,31 +53,31 @@ models:
       +tags: ['gold', 'marts']
       +docs:
         node_color: "#FFD700"  # Gold color
-      
+
       # Dimension tables
       dimensions:
         +materialized: table
         +tags: ['dimension']
-        
+
       # Fact tables
       facts:
         +materialized: incremental
         +on_schema_change: "sync_all_columns"
         +unique_key: ['game_id', 'player_id']  # Adjust per model
         +tags: ['fact']
-        
-      # Analytics marts
-      analytics:
-        +materialized: table
-        +tags: ['analytics']
 
-# Snapshot configurations
-snapshots:
-  nba_analytics:
-    +target_schema: snapshots
-    +strategy: timestamp
-    +updated_at: updated_at
-    +invalidate_hard_deletes: true
+      # Analytics marts - Commented out as this subdirectory does not exist yet.
+      # analytics:
+      #   +materialized: table
+      #   +tags: ['analytics']
+
+# Snapshot configurations - Commented out as the snapshots directory is empty.
+# snapshots:
+#   nba_analytics:
+#     +target_schema: snapshots
+#     +strategy: timestamp
+#     +updated_at: updated_at
+#     +invalidate_hard_deletes: true
 
 # Test configurations
 tests:
@@ -86,24 +86,24 @@ tests:
     +store_failures: true
     +schema: test_results
 
-# Seed configurations
-seeds:
-  nba_analytics:
-    +schema: seeds
-    +quote_columns: true
+# Seed configurations - Commented out as the seeds directory is empty.
+# seeds:
+#   nba_analytics:
+#     +schema: seeds
+#     +quote_columns: true
 
 # Variable configurations
 vars:
   # Date variables for incremental loads
   start_date: '2013-10-01'
   end_date: '2025-10-08'
-  
+
   # Performance thresholds for analytics
   min_games_played: 10
   min_minutes_per_game: 15
   clutch_time_minutes: 5
   close_game_margin: 5
-  
+
   # Season definitions
   regular_season_start_month: 10
   regular_season_end_month: 4
@@ -117,11 +117,12 @@ quoting:
   identifier: false
 
 # Log configurations
-log:
-  colorize: true
-  format: json
+# log:
+#   colorize: true
+#   format: json
 
 # Query comments for debugging
-query-comment:
-  comment: "/* dbt model: {{ model.name }} | run at: {{ run_started_at }} */"
-  append: true
+# query-comment:
+#   comment: "/* dbt run at: {{ run_started_at }} */"
+#   append: true
+
