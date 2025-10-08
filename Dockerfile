@@ -8,27 +8,27 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
 WORKDIR /usr/app
 
-# Install DBT with PostgreSQL adapter
-RUN pip install --no-cache-dir \
-    dbt-core==1.7.4 \
-    dbt-postgres==1.7.4 \
-    sqlfluff==3.0.0 \
-    sqlfluff-templater-dbt==3.0.0
+# --- OPTIMIZATION START ---
+# Copy only the requirements file first
+COPY requirements.txt .
 
-# Create necessary directories
-RUN mkdir -p /usr/app/dbt /usr/app/logs
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+# --- OPTIMIZATION END ---
 
-# Set environment variables
+# Copy the rest of the dbt project
+COPY ./dbt /usr/app/dbt
+
+# Set environment variable for dbt
 ENV DBT_PROFILES_DIR=/usr/app/dbt
-ENV PYTHONPATH=/usr/app
 
 # Create non-root user for security
 RUN groupadd -r dbt && useradd -r -g dbt dbt
+# Change ownership of the entire app directory AFTER copying files
 RUN chown -R dbt:dbt /usr/app
 USER dbt
 
-# Default command
+# Default command to keep container running if needed
 CMD ["tail", "-f", "/dev/null"]
