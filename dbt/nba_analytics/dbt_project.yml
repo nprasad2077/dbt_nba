@@ -96,7 +96,7 @@ tests:
 vars:
   # Date variables for incremental loads
   start_date: '2013-10-01'
-  end_date: '2025-10-08'
+  end_date: '2025-10-09'
 
   # Performance thresholds for analytics
   min_games_played: 10
