@@ -41,9 +41,7 @@ cleaned_and_transformed AS (
         COALESCE(q1, 0) + COALESCE(q2, 0) + COALESCE(q3, 0) + COALESCE(q4, 0) AS regulation_points,
         COALESCE(ot1, 0) + COALESCE(ot2, 0) + COALESCE(ot3, 0) AS overtime_points,
 
-        -- CORRECTED LOGIC: A game had overtime only if points were scored in that period.
-        -- The previous logic `(ot1 > 0 OR ot1 IS NOT NULL)` was incorrect because
-        -- for non-overtime games, ot1 is 0, which is not null, resulting in TRUE.
+        -- Boolean flags for overtime periods
         COALESCE(ot1, 0) > 0 AS had_ot1,
         COALESCE(ot2, 0) > 0 AS had_ot2,
         COALESCE(ot3, 0) > 0 AS had_ot3,
@@ -57,8 +55,7 @@ cleaned_and_transformed AS (
         GREATEST(COALESCE(q1, 0), COALESCE(q2, 0), COALESCE(q3, 0), COALESCE(q4, 0)) AS max_quarter_score,
         LEAST(COALESCE(q1, 0), COALESCE(q2, 0), COALESCE(q3, 0), COALESCE(q4, 0)) AS min_quarter_score,
 
-        -- Derived Fields: Identify the best scoring quarter.
-        -- Note: In case of a tie, this will return the first quarter that matches the max score.
+        -- Derived Fields: Identify the best scoring quarter
         CASE
             WHEN GREATEST(COALESCE(q1, 0), COALESCE(q2, 0), COALESCE(q3, 0), COALESCE(q4, 0)) = COALESCE(q1, 0) THEN 'Q1'
             WHEN GREATEST(COALESCE(q1, 0), COALESCE(q2, 0), COALESCE(q3, 0), COALESCE(q4, 0)) = COALESCE(q2, 0) THEN 'Q2'
@@ -66,7 +63,7 @@ cleaned_and_transformed AS (
             ELSE 'Q4'
         END AS best_quarter,
 
-        -- Metadata
+        -- Metadata - KEEP THE ORIGINAL TIMESTAMPS
         created_at,
         updated_at,
         CURRENT_TIMESTAMP AS dbt_loaded_at
@@ -78,4 +75,3 @@ cleaned_and_transformed AS (
 )
 
 SELECT * FROM cleaned_and_transformed
-
