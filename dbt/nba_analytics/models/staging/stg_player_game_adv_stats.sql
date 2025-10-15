@@ -11,6 +11,21 @@ WITH source_data AS (
     WHERE deleted_at IS NULL
 ),
 
+with_minutes AS (
+    SELECT
+        *,
+        -- Calculate minutes once to avoid repetition
+        CASE 
+            WHEN mp IS NOT NULL AND mp != '' AND mp LIKE '%:%' THEN
+                CAST(SPLIT_PART(mp, ':', 1) AS NUMERIC) + 
+                (CAST(SPLIT_PART(mp, ':', 2) AS NUMERIC) / 60.0)
+            WHEN mp IS NOT NULL AND mp != '' THEN
+                CAST(mp AS NUMERIC)
+            ELSE 0
+        END AS minutes_played_calc
+    FROM source_data
+),
+
 cleaned AS (
     SELECT
         -- Keys
@@ -23,15 +38,7 @@ cleaned AS (
         
         -- Minutes Played
         mp AS minutes_played_str,
-        -- Convert MM:SS to decimal minutes
-        CASE 
-            WHEN mp IS NOT NULL AND mp != '' AND mp LIKE '%:%' THEN
-                CAST(SPLIT_PART(mp, ':', 1) AS NUMERIC) + 
-                (CAST(SPLIT_PART(mp, ':', 2) AS NUMERIC) / 60.0)
-            WHEN mp IS NOT NULL AND mp != '' THEN
-                CAST(mp AS NUMERIC)
-            ELSE 0
-        END AS minutes_played,
+        minutes_played_calc AS minutes_played,
         
         -- Shooting Efficiency
         COALESCE(ts_percent, 0) AS true_shooting_pct,
@@ -61,23 +68,39 @@ cleaned AS (
         -- Derived Advanced Metrics
         COALESCE(o_rtg, 0) - COALESCE(d_rtg, 0) AS net_rating,
         
-        -- Efficiency Categories
+        -- Efficiency Categories (with minutes context)
         CASE 
+            WHEN minutes_played_calc < 5 THEN 'Insufficient Minutes'
             WHEN COALESCE(ts_percent, 0) >= 0.60 THEN 'Elite'
             WHEN COALESCE(ts_percent, 0) >= 0.55 THEN 'Good'
             WHEN COALESCE(ts_percent, 0) >= 0.50 THEN 'Average'
             ELSE 'Below Average'
         END AS shooting_efficiency_tier,
         
+        -- Usage Tier with comprehensive minutes and usage logic
         CASE 
-            WHEN COALESCE(usg_percent, 0) >= 30 THEN 'Primary Option'
-            WHEN COALESCE(usg_percent, 0) >= 25 THEN 'Secondary Option'
-            WHEN COALESCE(usg_percent, 0) >= 20 THEN 'Role Player'
-            ELSE 'Limited Role'
+            -- Garbage time / minimal minutes
+            WHEN minutes_played_calc < 5 THEN 'Garbage Time'
+            
+            -- Limited minutes
+            WHEN minutes_played_calc < 15 THEN 'Limited Minutes'
+            
+            -- Primary Option: Multiple criteria
+            WHEN (minutes_played_calc >= 30 AND COALESCE(usg_percent, 0) >= 22) OR
+                 (minutes_played_calc >= 25 AND COALESCE(usg_percent, 0) >= 25) THEN 'Primary Option'
+            
+            -- Secondary Option
+            WHEN minutes_played_calc >= 20 AND COALESCE(usg_percent, 0) >= 20 THEN 'Secondary Option'
+            
+            -- Role Player
+            WHEN minutes_played_calc >= 15 THEN 'Role Player'
+            
+            ELSE 'Limited Minutes'
         END AS usage_tier,
         
-        -- Player Impact Categories
+        -- Player Impact Categories (with minutes context)
         CASE 
+            WHEN minutes_played_calc < 5 THEN 'Insufficient Minutes'
             WHEN COALESCE(bpm, 0) >= 10 THEN 'Elite Impact'
             WHEN COALESCE(bpm, 0) >= 5 THEN 'High Impact'
             WHEN COALESCE(bpm, 0) >= 0 THEN 'Positive Impact'
@@ -85,24 +108,36 @@ cleaned AS (
             ELSE 'Very Negative Impact'
         END AS impact_tier,
         
-        -- Versatility Indicators
+        -- Minutes-based role (additional context)
+        CASE
+            WHEN minutes_played_calc >= 32 THEN 'Starter/Key Player'
+            WHEN minutes_played_calc >= 20 THEN 'Rotation Player'
+            WHEN minutes_played_calc >= 10 THEN 'Bench Player'
+            WHEN minutes_played_calc >= 5 THEN 'Deep Bench'
+            ELSE 'Garbage Time'
+        END AS minutes_based_role,
+        
+        -- Versatility Indicators (requires meaningful minutes)
         CASE 
-            WHEN COALESCE(ast_percent, 0) >= 20 
-                 AND COALESCE(trb_percent, 0) >= 15 THEN TRUE
+            WHEN minutes_played_calc >= 15
+                AND COALESCE(ast_percent, 0) >= 20 
+                AND COALESCE(trb_percent, 0) >= 15 THEN TRUE
             ELSE FALSE
         END AS is_versatile,
         
-        -- Defensive Specialist Indicator
+        -- Defensive Specialist Indicator (requires meaningful minutes)
         CASE 
-            WHEN (COALESCE(stl_percent, 0) >= 2.5 OR COALESCE(blk_percent, 0) >= 4)
-                 AND COALESCE(d_rtg, 0) < 105 THEN TRUE
+            WHEN minutes_played_calc >= 15
+                AND (COALESCE(stl_percent, 0) >= 2.5 OR COALESCE(blk_percent, 0) >= 4)
+                AND COALESCE(d_rtg, 0) < 105 THEN TRUE
             ELSE FALSE
         END AS is_defensive_specialist,
         
-        -- Three and D Player
+        -- Three and D Player (requires meaningful minutes)
         CASE 
-            WHEN COALESCE(three_p_ar, 0) >= 0.4 
-                 AND COALESCE(d_rtg, 0) < 110 THEN TRUE
+            WHEN minutes_played_calc >= 15
+                AND COALESCE(three_p_ar, 0) >= 0.4 
+                AND COALESCE(d_rtg, 0) < 110 THEN TRUE
             ELSE FALSE
         END AS is_three_and_d,
         
@@ -111,7 +146,7 @@ cleaned AS (
         updated_at,
         CURRENT_TIMESTAMP AS dbt_loaded_at
         
-    FROM source_data
+    FROM with_minutes
     WHERE 
         game_id IS NOT NULL
         AND player_id IS NOT NULL
