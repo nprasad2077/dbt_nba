@@ -1,57 +1,63 @@
 version: 2
 
 models:
-  - name: int_games_enriched
-    description: Comprehensive game information combining base game data with quarter-by-quarter scoring
-    columns:
-      - name: game_id
-        description: Unique game identifier
-        tests:
-          - unique
-          - not_null
-      - name: game_date
-        description: Date of the game
-        tests:
-          - not_null
-      - name: was_clutch_game
-        description: Whether the game was within 5 points entering the 4th quarter
-      - name: is_comeback_win
-        description: Whether the winning team was trailing at halftime
-      - name: game_competitiveness
-        description: Categorization based on final margin (Very Close/Close/Competitive/Blowout)
-
   - name: int_player_performance
-    description: Combined player statistics with performance metrics and role classifications
+    description: "Unified model containing both basic and advanced stats for each player in every game. The grain is one row per player per game."
     columns:
       - name: game_id
-        description: Game identifier
+        description: "Foreign key to the game."
         tests:
           - not_null
       - name: player_id
-        description: Player identifier
+        description: "Foreign key to the player."
         tests:
           - not_null
-      - name: performance_rating
-        description: Composite performance score (0-10 scale)
-      - name: player_role
-        description: Role classification based on minutes and usage (Star/Key Player/Rotation/Bench/DNP)
-      - name: fantasy_points
-        description: Standard fantasy basketball points
-
+      - name: unique_key
+        description: "Concatenated key of game_id and player_id to ensure uniqueness."
+        tests:
+          - unique
+        columns:
+          - game_id
+          - player_id
+          
   - name: int_team_performance
-    description: Team-level performance aggregations with ratings and categorizations
+    description: "Unified model containing both basic and advanced stats for each team in every game. The grain is one row per team per game."
     columns:
       - name: game_id
-        description: Game identifier
+        description: "Foreign key to the game."
         tests:
           - not_null
       - name: team
-        description: Team abbreviation
+        description: "Team abbreviation."
         tests:
           - not_null
-      - name: performance_grade
-        description: Overall performance grade (A+ to F scale)
-      - name: home_away
-        description: Whether team played at home or away
-      - name: point_margin
-        description: Points scored minus points allowed
+      - name: unique_key
+        description: "Concatenated key of game_id and team to ensure uniqueness."
+        tests:
+          - unique
+        columns:
+          - game_id
+          - team
+
+  - name: int_games_enriched
+    description: "Game-level model enriched with detailed performance statistics for both the home and visitor teams."
+    columns:
+      - name: game_id
+        description: "Primary key for the game."
+        tests:
+          - unique
+          - not_null
+      - name: home_team
+        description: "Home team abbreviation."
+        tests:
+          - not_null
+          - relationships:
+              to: ref('int_team_performance')
+              field: team
+      - name: visitor_team
+        description: "Visiting team abbreviation."
+        tests:
+          - not_null
+          - relationships:
+              to: ref('int_team_performance')
+              field: team
