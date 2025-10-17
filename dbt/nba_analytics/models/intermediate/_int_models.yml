@@ -2,7 +2,7 @@ version: 2
 
 models:
   - name: int_player_performance
-    description: "Unified model containing both basic and advanced stats for each player in every game. The grain is one row per player per game."
+    description: "Unified model containing basic and advanced stats for each player in every game. Grain: one row per player per game."
     columns:
       - name: game_id
         description: "Foreign key to the game."
@@ -13,7 +13,7 @@ models:
         tests:
           - not_null
       - name: unique_key
-        description: "Concatenated key of game_id and player_id to ensure uniqueness."
+        description: "Composite key of game_id and player_id to ensure uniqueness."
         tests:
           - unique
         columns:
@@ -21,7 +21,7 @@ models:
           - player_id
           
   - name: int_team_performance
-    description: "Unified model containing both basic and advanced stats for each team in every game. The grain is one row per team per game."
+    description: "Unified model containing basic and advanced stats for each team in every game. Grain: one row per team per game."
     columns:
       - name: game_id
         description: "Foreign key to the game."
@@ -32,7 +32,7 @@ models:
         tests:
           - not_null
       - name: unique_key
-        description: "Concatenated key of game_id and team to ensure uniqueness."
+        description: "Composite key of game_id and team to ensure uniqueness."
         tests:
           - unique
         columns:
@@ -40,7 +40,7 @@ models:
           - team
 
   - name: int_games_enriched
-    description: "Game-level model enriched with detailed performance statistics for both the home and visitor teams."
+    description: "Game-level model enriched with detailed performance stats for both the home and visitor teams. Grain: one row per game."
     columns:
       - name: game_id
         description: "Primary key for the game."
@@ -48,16 +48,20 @@ models:
           - unique
           - not_null
       - name: home_team
-        description: "Home team abbreviation."
+        description: "Home team abbreviation, foreign key to int_team_performance."
         tests:
           - not_null
           - relationships:
-              to: ref('int_team_performance')
-              field: team
+              # FIX: Nesting arguments under an 'arguments' key
+              arguments:
+                to: ref('int_team_performance')
+                field: team
       - name: visitor_team
-        description: "Visiting team abbreviation."
+        description: "Visiting team abbreviation, foreign key to int_team_performance."
         tests:
           - not_null
           - relationships:
-              to: ref('int_team_performance')
-              field: team
+              # FIX: Nesting arguments under an 'arguments' key
+              arguments:
+                to: ref('int_team_performance')
+                field: team

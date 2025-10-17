@@ -1,6 +1,30 @@
 # dbt_nba
 
-## Commands
+## Launch Commands
+
+```bash
+docker compose down
+
+docker stop $(docker ps -q --filter network=dbt_nba_nba_network)
+
+docker compose down
+
+docker compose --profile dbt up --build -d
+```
+
+## DBT Commands once Docker Container Launched
+
+```bash
+docker compose exec dbt_runner bash
+
+dbt run --select tag:staging --project-dir /usr/app/dbt/nba_analytics
+
+dbt run --select intermediate --project-dir /usr/app/dbt/nba_analytics
+
+exit
+```
+
+## Commands General
 
 ```bash
 # You should still be inside the container. If not, run:

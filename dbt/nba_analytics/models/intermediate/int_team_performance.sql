@@ -1,7 +1,11 @@
 {{
     config(
         materialized='table',
-        schema='intermediate'
+        schema='intermediate',
+        indexes=[
+            {'columns': ['game_id', 'team'], 'unique': True},
+            {'columns': ['team', 'game_date']}
+        ]
     )
 }}
 
@@ -15,48 +19,64 @@ adv_stats AS (
     FROM {{ ref('stg_team_game_adv_stats') }}
 ),
 
+games AS (
+    SELECT 
+        game_id,
+        game_date,
+        season_start_year,
+        is_playoff,
+        winning_team,
+        home_team,
+        visitor_team
+    FROM {{ ref('stg_games') }}
+),
+
 final AS (
     SELECT
         -- Keys
-        basic_stats.game_id,
-        basic_stats.team,
+        b.game_id,
+        b.team,
 
-        -- Core stats
-        basic_stats.points,
-        basic_stats.assists,
-        basic_stats.total_rebounds,
-        basic_stats.steals,
-        basic_stats.blocks,
-        basic_stats.turnovers,
+        -- Game Context
+        g.game_date,
+        g.season_start_year,
+        g.is_playoff,
+        CASE 
+            WHEN b.team = g.winning_team THEN 'W'
+            ELSE 'L'
+        END AS game_result,
+        CASE 
+            WHEN b.team = g.home_team THEN g.visitor_team
+            ELSE g.home_team
+        END AS opponent_team,
 
-        -- Derived basic metrics
-        basic_stats.possessions_estimate,
-        basic_stats.pace,
+        -- Core Performance
+        b.points,
+        a.offensive_rating,
+        a.defensive_rating,
+        a.net_rating,
+        
+        -- Pace & Four Factors
+        b.pace,
+        b.effective_fg_pct,
+        b.turnover_rate,
+        b.offensive_rebound_rate,
+        b.free_throw_rate,
 
-        -- Four Factors
-        basic_stats.effective_fg_pct,
-        basic_stats.turnover_rate,
-        basic_stats.offensive_rebound_rate,
-        basic_stats.free_throw_rate,
+        -- Advanced Tiers & Styles
+        a.offensive_tier,
+        a.defensive_tier,
+        a.shot_selection_style,
+        a.ball_movement_style,
+        a.ball_security_tier,
+        a.defensive_activity
 
-        -- Advanced stats
-        adv_stats.offensive_rating,
-        adv_stats.defensive_rating,
-        adv_stats.net_rating,
-        adv_stats.true_shooting_pct,
-
-        -- Derived advanced tiers & styles
-        adv_stats.offensive_tier,
-        adv_stats.defensive_tier,
-        adv_stats.shot_selection_style,
-        adv_stats.ball_movement_style,
-        adv_stats.ball_security_tier,
-        adv_stats.defensive_activity
-
-    FROM basic_stats
-    LEFT JOIN adv_stats
-        ON basic_stats.game_id = adv_stats.game_id
-        AND basic_stats.team = adv_stats.team
+    FROM basic_stats AS b
+    LEFT JOIN adv_stats AS a
+        ON b.game_id = a.game_id
+        AND b.team = a.team
+    LEFT JOIN games AS g
+        ON b.game_id = g.game_id
 )
 
 SELECT * FROM final

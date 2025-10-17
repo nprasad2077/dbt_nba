@@ -1,13 +1,19 @@
 {{
     config(
         materialized='table',
-        schema='intermediate'
+        schema='intermediate',
+        indexes=[
+            {'columns': ['game_id', 'player_id'], 'unique': True},
+            {'columns': ['player_id', 'game_date']},
+            {'columns': ['team', 'game_date']}
+        ]
     )
 }}
 
 WITH basic_stats AS (
     SELECT *
     FROM {{ ref('stg_player_game_basic_stats') }}
+    WHERE did_play = TRUE
 ),
 
 adv_stats AS (
@@ -15,65 +21,84 @@ adv_stats AS (
     FROM {{ ref('stg_player_game_adv_stats') }}
 ),
 
+games AS (
+    SELECT 
+        game_id,
+        game_date,
+        season_start_year,
+        is_playoff,
+        home_team,
+        winning_team
+    FROM {{ ref('stg_games') }}
+),
+
 final AS (
     SELECT
-        -- Keys from basic stats
-        basic_stats.game_id,
-        basic_stats.player_id,
-        basic_stats.team,
-        basic_stats.player_name,
+        -- Primary Keys
+        b.game_id,
+        b.player_id,
 
-        -- Core basic stats
-        basic_stats.did_play,
-        basic_stats.minutes_played,
-        basic_stats.points,
-        basic_stats.assists,
-        basic_stats.total_rebounds,
-        basic_stats.steals,
-        basic_stats.blocks,
-        basic_stats.turnovers,
-        basic_stats.personal_fouls,
-        basic_stats.plus_minus,
-        basic_stats.game_score,
+        -- Player & Team Info
+        b.player_name,
+        b.team,
 
-        -- Shooting basic stats
-        basic_stats.field_goals_made,
-        basic_stats.field_goals_attempted,
-        basic_stats.field_goal_pct,
-        basic_stats.three_pointers_made,
-        basic_stats.three_pointers_attempted,
-        basic_stats.three_point_pct,
-        basic_stats.free_throws_made,
-        basic_stats.free_throws_attempted,
-        basic_stats.free_throw_pct,
+        -- Game Context
+        g.game_date,
+        g.season_start_year,
+        g.is_playoff,
+        CASE 
+            WHEN b.team = g.winning_team THEN 'W'
+            ELSE 'L'
+        END AS game_result,
+        CASE 
+            WHEN b.team = g.home_team THEN 'HOME'
+            ELSE 'AWAY'
+        END AS team_location,
 
-        -- Derived basic stats
-        basic_stats.is_double_double,
-        basic_stats.is_triple_double,
-        basic_stats.likely_starter,
+        -- Core Performance Stats
+        b.minutes_played,
+        b.points,
+        b.assists,
+        b.total_rebounds,
+        b.steals,
+        b.blocks,
+        b.turnovers,
+        b.plus_minus,
+        a.net_rating,
+        a.box_plus_minus,
         
-        -- Core advanced stats from adv_stats
-        adv_stats.usage_pct,
-        adv_stats.offensive_rating,
-        adv_stats.defensive_rating,
-        adv_stats.net_rating,
-        adv_stats.box_plus_minus,
-        adv_stats.true_shooting_pct,
-        adv_stats.effective_fg_pct,
+        -- Shooting Stats
+        b.field_goals_made,
+        b.field_goals_attempted,
+        b.field_goal_pct,
+        b.three_pointers_made,
+        b.three_pointers_attempted,
+        b.three_point_pct,
+        a.true_shooting_pct,
+        a.effective_fg_pct,
 
-        -- Derived advanced tiers & flags from adv_stats
-        adv_stats.shooting_efficiency_tier,
-        adv_stats.usage_tier,
-        adv_stats.impact_tier,
-        adv_stats.minutes_based_role,
-        adv_stats.is_versatile,
-        adv_stats.is_defensive_specialist,
-        adv_stats.is_three_and_d
+        -- Advanced Stats & Tiers
+        a.usage_pct,
+        a.offensive_rating,
+        a.defensive_rating,
+        a.usage_tier,
+        a.impact_tier,
+        a.shooting_efficiency_tier,
+        a.minutes_based_role,
 
-    FROM basic_stats
-    LEFT JOIN adv_stats
-        ON basic_stats.game_id = adv_stats.game_id
-        AND basic_stats.player_id = adv_stats.player_id
+        -- Milestones & Indicators
+        b.is_double_double,
+        b.is_triple_double,
+        a.is_versatile,
+        a.is_defensive_specialist,
+        a.is_three_and_d
+
+    FROM basic_stats AS b
+    LEFT JOIN adv_stats AS a
+        ON b.game_id = a.game_id
+        AND b.player_id = a.player_id
+    LEFT JOIN games AS g
+        ON b.game_id = g.game_id
 )
 
 SELECT * FROM final
