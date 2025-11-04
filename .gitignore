@@ -210,3 +210,7 @@ __marimo__/
 # Files and Folders
 docs/
 data/
+project_data_backup.tar.gz
+*.dump
+project_data_backup.tar.gz
+*.tar.gz # Optional: ignore all tar.gz files
