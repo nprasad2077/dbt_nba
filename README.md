@@ -7,6 +7,8 @@ docker compose down
 
 docker stop $(docker ps -q --filter network=dbt_nba_nba_network)
 
+docker stop $(docker ps -q --filter network=dbt_nba_nba_network) && docker compose down;
+
 docker compose down
 
 docker compose --profile dbt up --build -d

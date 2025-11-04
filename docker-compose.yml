@@ -1,19 +1,19 @@
-version: '3.8'
-
+---
+version: "3.8"
 services:
   postgres:
     image: postgres:16-alpine
     container_name: nba_postgres
     restart: unless-stopped
+    shm_size: 1g  # Increases the shared memory available to Postgres for parallel queries
     environment:
       POSTGRES_USER: nba_admin
       POSTGRES_PASSWORD: nba_secure_password_2024
       POSTGRES_DB: nba_analytics
-      # Performance tuning for analytics workloads
-      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=en_US.utf8"
-      # PostgreSQL configuration
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=en_US.utf8
       POSTGRES_HOST_AUTH_METHOD: md5
-      # Additional performance settings
+      # Note: Many of these env vars are overridden by your `command` below.
+      # It's better to manage them in one place (e.g., the command or a config file).
       SHARED_BUFFERS: 256MB
       WORK_MEM: 16MB
       MAINTENANCE_WORK_MEM: 128MB
@@ -25,40 +25,29 @@ services:
       MAX_PARALLEL_WORKERS_PER_GATHER: 4
       MAX_PARALLEL_WORKERS: 8
     ports:
-      - "5438:5432"
+      - 5438:5432
     volumes:
-      # Named volume for data persistence
-      - nba_postgres_data:/var/lib/postgresql/data
-      # Custom PostgreSQL configuration
+      - ./data/postgres:/var/lib/postgresql/data
       - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
-      # Initial setup scripts
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
-      # Backup directory
       - ./backups:/backups
     networks:
       - nba_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U nba_admin -d nba_analytics"]
+      test:
+        - CMD-SHELL
+        - pg_isready -U nba_admin -d nba_analytics
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
     command: >
-      postgres
-      -c shared_buffers=256MB
-      -c work_mem=16MB
-      -c maintenance_work_mem=128MB
-      -c effective_cache_size=1GB
-      -c max_connections=200
-      -c random_page_cost=1.1
-      -c effective_io_concurrency=200
-      -c max_worker_processes=8
-      -c max_parallel_workers_per_gather=4
-      -c max_parallel_workers=8
-      -c log_statement=all
-      -c log_duration=on
-      -c log_min_duration_statement=100ms
-
+      postgres -c shared_buffers=256MB -c work_mem=16MB -c
+      maintenance_work_mem=128MB -c effective_cache_size=1GB -c
+      max_connections=200 -c random_page_cost=1.1 -c
+      effective_io_concurrency=200 -c max_worker_processes=8 -c
+      max_parallel_workers_per_gather=4 -c max_parallel_workers=8 -c
+      log_statement=all -c log_duration=on -c log_min_duration_statement=100ms
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: nba_pgadmin
@@ -66,20 +55,18 @@ services:
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@nba-analytics.com
       PGADMIN_DEFAULT_PASSWORD: pgadmin_password_2024
-      PGADMIN_CONFIG_SERVER_MODE: 'False'
-      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
     ports:
-      - "5050:80"
+      - 5050:80
     volumes:
-      - pgadmin_data:/var/lib/pgadmin
+      - ./data/pgadmin:/var/lib/pgadmin
       - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
     networks:
       - nba_network
     depends_on:
       postgres:
         condition: service_healthy
-
-  # DBT runner service (for automated runs)
   dbt_runner:
     build:
       context: .
@@ -88,20 +75,18 @@ services:
     environment:
       DBT_PROFILES_DIR: /usr/app/dbt
       DBT_PROJECT_DIR: /usr/app/dbt
-      # Database connection
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       POSTGRES_USER: nba_admin
       POSTGRES_PASSWORD: nba_secure_password_2024
       POSTGRES_DB: nba_analytics
-      # DBT specific
       DBT_SCHEMA: analytics
       DBT_THREADS: 4
     volumes:
       - ./dbt:/usr/app/dbt
       - ./logs:/usr/app/logs
-      - dbt_packages:/usr/app/dbt/dbt_packages
-      - dbt_target:/usr/app/dbt/target
+      - ./data/dbt_packages:/usr/app/dbt/dbt_packages
+      - ./data/dbt_target:/usr/app/dbt/target
     networks:
       - nba_network
     depends_on:
@@ -109,22 +94,7 @@ services:
         condition: service_healthy
     profiles:
       - dbt
-    command: tail -f /dev/null  # Keep container running for manual dbt commands
-
-volumes:
-  nba_postgres_data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ./data/postgres
-  pgadmin_data:
-    driver: local
-  dbt_packages:
-    driver: local
-  dbt_target:
-    driver: local
-
+    command: tail -f /dev/null
 networks:
   nba_network:
     driver: bridge
