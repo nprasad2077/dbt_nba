@@ -40,11 +40,11 @@ models:
       +docs:
         node_color: "#C0C0C0"  # Silver color
       # Performance optimizations
-      +indexes:
-        - columns: ['game_id']
-        - columns: ['date']
-        - columns: ['player_id']
-        - columns: ['team']
+      # +indexes:
+      #   - columns: ['game_id']
+      #   # - columns: ['date']
+      #   - columns: ['player_id']
+      #   - columns: ['team']
 
     # Marts layer (Gold) - Final analytics tables
     marts:

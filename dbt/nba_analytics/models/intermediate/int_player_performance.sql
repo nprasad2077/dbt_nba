@@ -1,28 +1,30 @@
 {{
     config(
         materialized='table',
-        schema='intermediate',
-        indexes=[
-            {'columns': ['game_id', 'player_id'], 'unique': True},
-            {'columns': ['player_id', 'game_date']},
-            {'columns': ['team', 'game_date']}
-        ]
+        schema='intermediate'
     )
 }}
 
 WITH basic_stats AS (
-    SELECT *
-    FROM {{ ref('stg_player_game_basic_stats') }}
+    SELECT
+        s.*,
+        map.team_abbr AS team_conformed
+    FROM {{ ref('stg_player_game_basic_stats') }} AS s
+    LEFT JOIN {{ ref('team_abbreviation_mappings') }} AS map
+        ON s.team = map.source_abbr
     WHERE did_play = TRUE
 ),
 
 adv_stats AS (
-    SELECT *
-    FROM {{ ref('stg_player_game_adv_stats') }}
+    SELECT
+        s.*,
+        map.team_abbr AS team_conformed
+    FROM {{ ref('stg_player_game_adv_stats') }} AS s
+    LEFT JOIN {{ ref('team_abbreviation_mappings') }} AS map
+        ON s.team = map.source_abbr
 ),
 
 games AS (
-    -- Use the team_mappings seed to get standardized team abbreviations
     SELECT 
         g.game_id,
         g.game_date,
@@ -43,19 +45,18 @@ final AS (
 
         -- Player & Team Info
         b.player_name,
-        b.team,
+        b.team_conformed AS team, -- Use the conformed abbreviation
 
         -- Game Context
         g.game_date,
         g.season_start_year,
         g.is_playoff,
-        -- Corrected CASE statements using conformed abbreviations
         CASE 
-            WHEN b.team = g.winning_team_abbr THEN 'W'
+            WHEN b.team_conformed = g.winning_team_abbr THEN 'W'
             ELSE 'L'
         END AS game_result,
         CASE 
-            WHEN b.team = g.home_team_abbr THEN 'HOME'
+            WHEN b.team_conformed = g.home_team_abbr THEN 'HOME'
             ELSE 'AWAY'
         END AS team_location,
 

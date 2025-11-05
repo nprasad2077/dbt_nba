@@ -27,9 +27,11 @@ dbt run --select intermediate --project-dir /usr/app/dbt/nba_analytics
 
 # dbt run --select int_games_enriched --project-dir /usr/app/dbt/nba_analytics
 
+# dbt run --select fct_player_game_stats --project-dir /usr/app/dbt/nba_analytics
+
 # dbt run --select dim_teams --project-dir /usr/app/dbt/nba_analytics
 
-dbt deps --project-dir /usr/app/dbt/nba_analytics
+# dbt deps --project-dir /usr/app/dbt/nba_analytics
 
 exit
 ```
@@ -42,6 +44,12 @@ docker compose exec dbt_runner bash
 
 # Run the command again
 dbt run --select tag:staging --project-dir /usr/app/dbt/nba_analytics
+
+dbt run --select tag:staging --full-refresh --project-dir /usr/app/dbt/nba_analytics
+
+dbt run --select intermediate --project-dir /usr/app/dbt/nba_analytics
+
+dbt run --select staging.stg_games --full-refresh --project-dir /usr/app/dbt/nba_analytics
 ```
 
 ```bash
@@ -50,6 +58,8 @@ docker compose exec dbt_runner bash
 
 # 2. Run dbt debug, telling it exactly where the project is
 dbt debug --project-dir /usr/app/dbt/nba_analytics
+
+dbt deps --project-dir /usr/app/dbt/nba_analytics
 
 # --- Expected Successful Output ---
 # 05:30:00  Running with dbt=1.10.13
@@ -110,3 +120,5 @@ exit
 ```
 
 `docker stop $(docker ps -q --filter network=dbt_nba_nba_network)`
+
+`dbt clean --project-dir /usr/app/dbt/nba_analytics`

@@ -1,27 +1,30 @@
 {{
     config(
         materialized='table',
-        schema='intermediate',
-        indexes=[
-            {'columns': ['game_id', 'team'], 'unique': True},
-            {'columns': ['team', 'game_date']}
-        ]
+        schema='intermediate'
     )
 }}
 
 WITH basic_stats AS (
-    SELECT *
-    FROM {{ ref('stg_team_game_basic_stats') }}
+    SELECT
+        s.*,
+        map.team_abbr AS team_conformed
+    FROM {{ ref('stg_team_game_basic_stats') }} AS s
+    LEFT JOIN {{ ref('team_abbreviation_mappings') }} AS map
+        ON s.team = map.source_abbr
 ),
 
 adv_stats AS (
-    SELECT *
-    FROM {{ ref('stg_team_game_adv_stats') }}
+    SELECT
+        s.*,
+        map.team_abbr AS team_conformed
+    FROM {{ ref('stg_team_game_adv_stats') }} AS s
+    LEFT JOIN {{ ref('team_abbreviation_mappings') }} AS map
+        ON s.team = map.source_abbr
 ),
 
 games AS (
-    -- Use the team_mappings seed to get standardized team abbreviations
-    SELECT 
+    SELECT
         g.game_id,
         g.game_date,
         g.season_start_year,
@@ -39,19 +42,18 @@ final AS (
     SELECT
         -- Keys
         b.game_id,
-        b.team,
+        b.team_conformed AS team, -- Use the conformed abbreviation
 
         -- Game Context
         g.game_date,
         g.season_start_year,
         g.is_playoff,
-        -- Corrected CASE statements using conformed abbreviations
-        CASE 
-            WHEN b.team = g.winning_team_abbr THEN 'W'
+        CASE
+            WHEN b.team_conformed = g.winning_team_abbr THEN 'W'
             ELSE 'L'
         END AS game_result,
-        CASE 
-            WHEN b.team = g.home_team_abbr THEN g.visitor_team_abbr
+        CASE
+            WHEN b.team_conformed = g.home_team_abbr THEN g.visitor_team_abbr
             ELSE g.home_team_abbr
         END AS opponent_team,
 
@@ -60,7 +62,7 @@ final AS (
         a.offensive_rating,
         a.defensive_rating,
         a.net_rating,
-        
+
         -- Pace & Four Factors
         b.pace,
         b.effective_fg_pct,
@@ -79,7 +81,7 @@ final AS (
     FROM basic_stats AS b
     LEFT JOIN adv_stats AS a
         ON b.game_id = a.game_id
-        AND b.team = a.team
+        AND b.team_conformed = a.team_conformed
     LEFT JOIN games AS g
         ON b.game_id = g.game_id
 )
