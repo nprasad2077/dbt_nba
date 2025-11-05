@@ -19,9 +19,13 @@ docker compose --profile dbt up --build -d
 ```bash
 docker compose exec dbt_runner bash
 
+dbt seed --project-dir /usr/app/dbt/nba_analytics
+
 dbt run --select tag:staging --project-dir /usr/app/dbt/nba_analytics
 
 dbt run --select intermediate --project-dir /usr/app/dbt/nba_analytics
+
+# dbt run --select int_games_enriched --project-dir /usr/app/dbt/nba_analytics
 
 exit
 ```

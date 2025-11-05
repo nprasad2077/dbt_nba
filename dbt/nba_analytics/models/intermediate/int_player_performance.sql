@@ -22,14 +22,17 @@ adv_stats AS (
 ),
 
 games AS (
+    -- Use the team_mappings seed to get standardized team abbreviations
     SELECT 
-        game_id,
-        game_date,
-        season_start_year,
-        is_playoff,
-        home_team,
-        winning_team
-    FROM {{ ref('stg_games') }}
+        g.game_id,
+        g.game_date,
+        g.season_start_year,
+        g.is_playoff,
+        home_map.team_abbr AS home_team_abbr,
+        winning_map.team_abbr AS winning_team_abbr
+    FROM {{ ref('stg_games') }} g
+    LEFT JOIN {{ ref('team_mappings') }} AS home_map ON g.home_team = home_map.full_name
+    LEFT JOIN {{ ref('team_mappings') }} AS winning_map ON g.winning_team = winning_map.full_name
 ),
 
 final AS (
@@ -46,12 +49,13 @@ final AS (
         g.game_date,
         g.season_start_year,
         g.is_playoff,
+        -- Corrected CASE statements using conformed abbreviations
         CASE 
-            WHEN b.team = g.winning_team THEN 'W'
+            WHEN b.team = g.winning_team_abbr THEN 'W'
             ELSE 'L'
         END AS game_result,
         CASE 
-            WHEN b.team = g.home_team THEN 'HOME'
+            WHEN b.team = g.home_team_abbr THEN 'HOME'
             ELSE 'AWAY'
         END AS team_location,
 

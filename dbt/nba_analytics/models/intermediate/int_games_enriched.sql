@@ -12,8 +12,16 @@
 }}
 
 WITH games AS (
-    SELECT *
-    FROM {{ ref('stg_games') }}
+    -- Use the team_mappings seed to get standardized team abbreviations
+    SELECT
+        g.*,
+        home_map.team_abbr AS home_team_abbr,
+        visitor_map.team_abbr AS visitor_team_abbr,
+        winning_map.team_abbr AS winning_team_abbr
+    FROM {{ ref('stg_games') }} AS g
+    LEFT JOIN {{ ref('team_mappings') }} AS home_map ON g.home_team = home_map.full_name
+    LEFT JOIN {{ ref('team_mappings') }} AS visitor_map ON g.visitor_team = visitor_map.full_name
+    LEFT JOIN {{ ref('team_mappings') }} AS winning_map ON g.winning_team = winning_map.full_name
 ),
 
 team_performance AS (
@@ -25,15 +33,15 @@ final AS (
     SELECT
         -- Core Game Details
         games.game_id,
-        games.game_date, -- FIX: Ensured this is game_date, not date
+        games.game_date,
         games.season_start_year,
         games.is_playoff,
         games.arena,
         
-        -- Team Identifiers
-        games.home_team,
-        games.visitor_team,
-        games.winning_team,
+        -- Team Identifiers (using conformed abbreviations)
+        games.home_team_abbr AS home_team,
+        games.visitor_team_abbr AS visitor_team,
+        games.winning_team_abbr AS winning_team,
         
         -- Final Score & Outcome
         games.home_points,
@@ -58,7 +66,7 @@ final AS (
         visitor_stats.net_rating AS visitor_net_rating,
         visitor_stats.pace AS visitor_pace,
         visitor_stats.effective_fg_pct AS visitor_effective_fg_pct,
-        visitor_stats.turnover_rate AS visitor_visitor_turnover_rate,
+        visitor_stats.turnover_rate AS visitor_turnover_rate, -- Typo fixed
         visitor_stats.offensive_tier AS visitor_offensive_tier,
         visitor_stats.defensive_tier AS visitor_defensive_tier,
 
@@ -69,15 +77,15 @@ final AS (
 
     FROM games
     
-    -- Join for home team stats
+    -- Join for home team stats using the conformed abbreviation
     LEFT JOIN team_performance AS home_stats
         ON games.game_id = home_stats.game_id
-        AND games.home_team = home_stats.team
+        AND games.home_team_abbr = home_stats.team
         
-    -- Join for visitor team stats
+    -- Join for visitor team stats using the conformed abbreviation
     LEFT JOIN team_performance AS visitor_stats
         ON games.game_id = visitor_stats.game_id
-        AND games.visitor_team = visitor_stats.team
+        AND games.visitor_team_abbr = visitor_stats.team
 )
 
 SELECT * FROM final
