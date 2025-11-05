@@ -27,6 +27,10 @@ dbt run --select intermediate --project-dir /usr/app/dbt/nba_analytics
 
 # dbt run --select int_games_enriched --project-dir /usr/app/dbt/nba_analytics
 
+# dbt run --select dim_teams --project-dir /usr/app/dbt/nba_analytics
+
+dbt deps --project-dir /usr/app/dbt/nba_analytics
+
 exit
 ```
 

@@ -29,14 +29,17 @@ cleaned AS (
         -- Minutes Played
         mp AS minutes_played_str,
         -- Convert MM:SS to decimal minutes
-        CASE 
-            WHEN mp IS NOT NULL AND mp != '' AND mp LIKE '%:%' THEN
-                CAST(SPLIT_PART(mp, ':', 1) AS NUMERIC) + 
-                (CAST(SPLIT_PART(mp, ':', 2) AS NUMERIC) / 60.0)
-            WHEN mp IS NOT NULL AND mp != '' THEN
-                CAST(mp AS NUMERIC)
-            ELSE 0
-        END AS minutes_played,
+        -- FIX: Convert MM:SS to a numeric type with 2 decimal places
+        CAST(
+            CASE 
+                WHEN mp IS NOT NULL AND mp != '' AND mp LIKE '%:%' THEN
+                    CAST(SPLIT_PART(mp, ':', 1) AS NUMERIC) + 
+                    (CAST(SPLIT_PART(mp, ':', 2) AS NUMERIC) / 60.0)
+                WHEN mp IS NOT NULL AND mp != '' THEN
+                    CAST(mp AS NUMERIC)
+                ELSE 0
+            END 
+        AS NUMERIC(10, 2)) AS minutes_played,
         
         -- Shooting Stats
         COALESCE(fg, 0) AS field_goals_made,
