@@ -1,138 +1,97 @@
 {{
     config(
-        materialized='table',
-        schema='marts'
+        materialized='incremental',
+        schema='marts',
+        unique_key='player_game_key'
     )
 }}
 
-WITH base_player_stats AS (
-    SELECT
-        game_id,
-        player_id,
-        team AS team_abbreviation,
-        minutes_played,
-        field_goals_made,
-        field_goals_attempted,
-        three_pointers_made,
-        three_pointers_attempted,
-        free_throws_made,
-        free_throws_attempted,
-        offensive_rebounds,
-        defensive_rebounds,
-        total_rebounds,
-        assists,
-        steals,
-        blocks,
-        turnovers,
-        personal_fouls,
-        points,
-        plus_minus
-    FROM {{ ref('stg_player_game_basic_stats') }}
-    WHERE did_play = true
-),
-
-adv_player_stats AS (
-    SELECT
-        game_id,
-        player_id,
-        team AS team_abbreviation,
-        true_shooting_pct,
-        effective_fg_pct,
-        three_point_attempt_rate,
-        free_throw_rate,
-        offensive_rebound_pct,
-        defensive_rebound_pct,
-        total_rebound_pct,
-        assist_pct,
-        steal_pct,
-        block_pct,
-        turnover_pct,
-        usage_pct,
-        offensive_rating,
-        defensive_rating,
-        box_plus_minus
-    FROM {{ ref('stg_player_game_adv_stats') }}
+WITH player_performance AS (
+    SELECT * FROM {{ ref('int_player_performance') }}
 ),
 
 game_details AS (
     SELECT
         game_id,
-        game_date,
-        season_start_year,
-        arena AS arena_name
-    FROM {{ ref('stg_games') }}
+        arena AS arena_name,
+        arena_city
+    FROM {{ ref('int_games_enriched') }}
 ),
 
 final AS (
     SELECT
-        -- Surrogate Key for the fact table
-        {{ dbt_utils.generate_surrogate_key(['base.game_id', 'base.player_id']) }} AS player_game_key,
+        -- Surrogate Key
+        {{ dbt_utils.generate_surrogate_key(['pp.game_id', 'pp.player_id']) }} AS player_game_key,
 
-        -- Foreign Keys from Dimensions
+        -- Foreign Keys
         p.player_key,
         t.team_key,
         d.date_key,
         s.season_key,
         a.arena_key,
+        
+        -- Junk Dimension
+        arch.archetype_key,
 
         -- Degenerate Dimension
-        base.game_id,
+        pp.game_id,
 
-        -- Measures from Base Stats
-        base.minutes_played,
-        base.points,
-        base.assists,
-        base.total_rebounds,
-        base.steals,
-        base.blocks,
-        base.turnovers,
-        base.offensive_rebounds,
-        base.defensive_rebounds,
-        base.field_goals_made,
-        base.field_goals_attempted,
-        base.three_pointers_made,
-        base.three_pointers_attempted,
-        base.free_throws_made,
-        base.free_throws_attempted,
-        base.personal_fouls,
-        base.plus_minus,
+        -- Measures from player_performance
+        pp.minutes_played,
+        pp.points,
+        pp.assists,
+        pp.total_rebounds,
+        pp.steals,
+        pp.blocks,
+        pp.turnovers,
+        pp.plus_minus,
+        pp.net_rating,
+        pp.box_plus_minus,
+        pp.field_goals_made,
+        pp.field_goals_attempted,
+        pp.three_pointers_made,
+        pp.three_pointers_attempted,
+        pp.true_shooting_pct,
+        pp.effective_fg_pct,
+        pp.usage_pct,
+        pp.offensive_rating,
+        pp.defensive_rating,
 
-        -- Measures from Advanced Stats
-        adv.true_shooting_pct,
-        adv.effective_fg_pct,
-        adv.three_point_attempt_rate,
-        adv.free_throw_rate,
-        adv.offensive_rebound_pct,
-        adv.defensive_rebound_pct,
-        adv.total_rebound_pct,
-        adv.assist_pct,
-        adv.steal_pct,
-        adv.block_pct,
-        adv.turnover_pct,
-        adv.usage_pct,
-        adv.offensive_rating,
-        adv.defensive_rating,
-        adv.box_plus_minus,
+        -- Game Date for partitioning
+        CAST(pp.game_date AS DATE) AS game_date
 
-        -- Game Details for Partitioning
-        CAST(gd.game_date AS DATE) AS game_date
+    FROM player_performance AS pp
 
-    FROM base_player_stats AS base
-    INNER JOIN adv_player_stats AS adv
-        ON base.game_id = adv.game_id
-        AND base.player_id = adv.player_id
     LEFT JOIN game_details AS gd
-        ON base.game_id = gd.game_id
+        ON pp.game_id = gd.game_id
+
+    LEFT JOIN {{ ref('dim_player_game_archetypes') }} AS arch
+        ON pp.usage_tier = arch.usage_tier
+        AND pp.impact_tier = arch.impact_tier
+        AND pp.shooting_efficiency_tier = arch.shooting_efficiency_tier
+        AND pp.minutes_based_role = arch.minutes_based_role
+        AND pp.is_double_double = arch.is_double_double
+        AND pp.is_triple_double = arch.is_triple_double
+        AND pp.is_versatile = arch.is_versatile
+        AND pp.is_defensive_specialist = arch.is_defensive_specialist
+        AND pp.is_three_and_d = arch.is_three_and_d
+    
     LEFT JOIN {{ ref('dim_players') }} AS p
-        ON base.player_id = p.player_id
+        ON pp.player_id = p.player_id
     LEFT JOIN {{ ref('dim_teams') }} AS t
-        ON base.team_abbreviation = t.team_abbr -- <<< THE FINAL, CORRECT JOIN CONDITION
+        ON pp.team = t.team_abbr
     LEFT JOIN {{ ref('dim_dates') }} AS d
-        ON CAST(gd.game_date AS DATE) = d.full_date
+        ON CAST(pp.game_date AS DATE) = d.full_date
     LEFT JOIN {{ ref('dim_seasons') }} AS s
-        ON gd.season_start_year = s.season_start_year
+        ON pp.season_start_year = s.season_start_year
+    -- This join is now robust and correct
     LEFT JOIN {{ ref('dim_arenas') }} AS a
-        ON gd.arena_name = a.arena_name
+        ON gd.arena_name = a.arena_name AND gd.arena_city = a.arena_city
+
+    {% if is_incremental() %}
+    WHERE pp.game_date >= (SELECT MAX(game_date) FROM {{ this }}) - INTERVAL '7 days'
+    {% endif %}
 )
 
 SELECT * FROM final
+

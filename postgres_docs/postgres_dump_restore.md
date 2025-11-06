@@ -11,7 +11,7 @@ docker exec nba_postgres psql -U nba_admin -d nba_analytics -c "DROP SCHEMA publ
 ### Option 2: Restore without the -c flag (since we already dropped everything)
 
 ```bash
-docker exec nba_postgres pg_restore -U nba_admin -d nba_analytics --no-owner --no-acl 2025.11.03.nba_backup.dump
+docker exec nba_postgres pg_restore -U nba_admin -d nba_analytics --no-owner --no-acl 2025.11.05_nba_backup.dump
 ```
 
 ## pg_dump
@@ -21,7 +21,7 @@ docker exec nba_go-postgres-1 pg_dump -U nbago -Fc nba_db > ./nba_backup.dump
 ```
 
 ```bash
-docker exec nba_go-postgres-1 pg_dump -U nbago -Fc nba_db > ./2025.11.04_nba_backup.dump
+docker exec nba_go-postgres-1 pg_dump -U nbago -Fc nba_db > ./2025.11.05_nba_backup.dump
 ```
 
 ## pg_restore
