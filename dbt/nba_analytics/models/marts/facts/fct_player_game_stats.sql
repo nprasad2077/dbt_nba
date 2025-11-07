@@ -2,7 +2,8 @@
     config(
         materialized='incremental',
         schema='marts',
-        unique_key='player_game_key'
+        unique_key='player_game_key',
+        tags=["facts"]
     )
 }}
 

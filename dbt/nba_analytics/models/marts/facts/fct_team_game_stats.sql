@@ -2,6 +2,7 @@
     config(
         materialized='incremental',
         schema='marts',
+        tags=["facts"],
         unique_key='team_game_key',
         indexes=[
             {'columns': ['team_key']},

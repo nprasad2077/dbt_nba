@@ -63,7 +63,7 @@ models:
       facts:
         +materialized: incremental
         +on_schema_change: "sync_all_columns"
-        +unique_key: ['game_id', 'player_id']  # Adjust per model
+        # +unique_key: ['game_id', 'player_id']  # Adjust per model
         +tags: ['fact']
 
       # Analytics marts - Commented out as this subdirectory does not exist yet.
