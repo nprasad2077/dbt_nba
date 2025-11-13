@@ -6,7 +6,7 @@
 }}
 
 WITH games AS (
-    -- Reverting to your original, correct logic of joining on full_name from stg_games
+    -- Your existing games CTE is correct
     SELECT
         g.*,
         home_map.team_abbr AS home_team_abbr,
@@ -18,6 +18,7 @@ WITH games AS (
     LEFT JOIN {{ ref('team_mappings') }} AS winning_map ON g.winning_team = winning_map.full_name
 ),
 
+-- *** FIX: Reverted to the PostgreSQL-compatible subquery pattern to filter on a window function ***
 arena_locations AS (
     SELECT
         arena_name,
@@ -79,10 +80,8 @@ final AS (
         visitor_stats.offensive_tier AS visitor_offensive_tier,
         visitor_stats.defensive_tier AS visitor_defensive_tier,
 
-        -- Calculated Matchup Metrics
-        (home_stats.pace + visitor_stats.pace) / 2 AS matchup_pace,
-        home_stats.offensive_rating - visitor_stats.defensive_rating AS home_off_vs_visitor_def_advantage,
-        visitor_stats.offensive_rating - home_stats.defensive_rating AS visitor_off_vs_home_def_advantage
+        -- Calculated Matchup Metric
+        (home_stats.pace + visitor_stats.pace) / 2 AS matchup_pace
 
     FROM games g
     

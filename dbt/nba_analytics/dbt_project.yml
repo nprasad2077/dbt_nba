@@ -39,12 +39,6 @@ models:
       +tags: ['silver', 'intermediate']
       +docs:
         node_color: "#C0C0C0"  # Silver color
-      # Performance optimizations
-      # +indexes:
-      #   - columns: ['game_id']
-      #   # - columns: ['date']
-      #   - columns: ['player_id']
-      #   - columns: ['team']
 
     # Marts layer (Gold) - Final analytics tables
     marts:
@@ -63,7 +57,6 @@ models:
       facts:
         +materialized: incremental
         +on_schema_change: "sync_all_columns"
-        # +unique_key: ['game_id', 'player_id']  # Adjust per model
         +tags: ['fact']
 
       # Analytics marts - Commented out as this subdirectory does not exist yet.
@@ -86,17 +79,17 @@ tests:
     +store_failures: true
     +schema: test_results
 
-# Seed configurations - Commented out as the seeds directory is empty.
-# seeds:
-#   nba_analytics:
-#     +schema: seeds
-#     +quote_columns: true
+# Seed configurations - Now enabled for mapping tables
+seeds:
+  nba_analytics:
+    +schema: seeds
+    +quote_columns: false # Recommended for PostgreSQL unless you need case-sensitive column names
 
 # Variable configurations
 vars:
   # Date variables for incremental loads
-  start_date: '2013-10-01'
-  end_date: '2025-10-09'
+  start_date: '2002-10-01'
+  end_date: '2025-11-10'
 
   # Performance thresholds for analytics
   min_games_played: 10

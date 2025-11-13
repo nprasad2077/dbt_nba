@@ -6,7 +6,16 @@
     )
 }}
 
-WITH source_data AS (
+-- *** FIX: CTE to reliably identify games that had overtime scoring ***
+WITH overtime_games AS (
+    SELECT
+        game_id,
+        MAX(CASE WHEN overtime_points > 0 THEN 1 ELSE 0 END) AS had_overtime
+    FROM {{ ref('stg_line_scores') }}
+    GROUP BY 1
+),
+
+source_data AS (
     SELECT * FROM {{ source('raw_nba', 'games') }}
     WHERE deleted_at IS NULL  -- Exclude soft-deleted records
 ),
@@ -14,84 +23,91 @@ WITH source_data AS (
 cleaned AS (
     SELECT
         -- Primary Key
-        game_id,
-        
+        g.game_id,
+
         -- Foreign Keys (will be created in intermediate layer)
-        home_team,
-        visitor_team,
-        
+        g.home_team,
+        g.visitor_team,
+
         -- Game Information
-        date AS game_date,
-        EXTRACT(YEAR FROM date) AS season_year,
-        CASE 
-            WHEN EXTRACT(MONTH FROM date) >= 10 THEN EXTRACT(YEAR FROM date)
-            ELSE EXTRACT(YEAR FROM date) - 1
+        g.date AS game_date,
+        EXTRACT(YEAR FROM g.date) AS season_year,
+        CASE
+            WHEN EXTRACT(MONTH FROM g.date) >= 10 THEN EXTRACT(YEAR FROM g.date)
+            ELSE EXTRACT(YEAR FROM g.date) - 1
         END AS season_start_year,
-        EXTRACT(MONTH FROM date) AS game_month,
-        EXTRACT(DAY FROM date) AS game_day,
-        TO_CHAR(date, 'Day') AS game_day_of_week,
-        is_playoff,
-        
+        EXTRACT(MONTH FROM g.date) AS game_month,
+        EXTRACT(DAY FROM g.date) AS game_day,
+        TO_CHAR(g.date, 'Day') AS game_day_of_week,
+        g.is_playoff,
+
         -- Time Information
-        start_time_et,
-        CASE 
-            WHEN start_time_et LIKE '%12:%p%' THEN 'Afternoon'
-            WHEN start_time_et LIKE '%1:%p%' OR start_time_et LIKE '%2:%p%' OR start_time_et LIKE '%3:%p%' THEN 'Afternoon'
-            WHEN start_time_et LIKE '%7:%p%' OR start_time_et LIKE '%8:%p%' THEN 'Prime Time'
+        g.start_time_et,
+        CASE
+            WHEN g.start_time_et LIKE '%12:%p%' THEN 'Afternoon'
+            WHEN g.start_time_et LIKE ANY (ARRAY['%1:%p%', '%2:%p%', '%3:%p%']) THEN 'Afternoon'
+            WHEN g.start_time_et LIKE ANY (ARRAY['%7:%p%', '%8:%p%']) THEN 'Prime Time'
             ELSE 'Late Night'
         END AS game_time_slot,
-        
+
         -- Location
-        arena,
-        
+        g.arena,
+
         -- Scores
-        home_pts AS home_points,
-        visitor_pts AS visitor_points,
-        
+        g.home_pts AS home_points,
+        g.visitor_pts AS visitor_points,
+
         -- Derived Fields
-        CASE 
-            WHEN home_pts > visitor_pts THEN home_team
-            WHEN visitor_pts > home_pts THEN visitor_team
+        CASE
+            WHEN g.home_pts > g.visitor_pts THEN g.home_team
+            WHEN g.visitor_pts > g.home_pts THEN g.visitor_team
             ELSE NULL
         END AS winning_team,
-        
-        CASE 
-            WHEN home_pts < visitor_pts THEN home_team
-            WHEN visitor_pts < home_pts THEN visitor_team
+
+        CASE
+            WHEN g.home_pts < g.visitor_pts THEN g.home_team
+            WHEN g.visitor_pts < g.home_pts THEN g.visitor_team
             ELSE NULL
         END AS losing_team,
-        
-        CASE 
-            WHEN home_pts > visitor_pts THEN 'HOME'
-            WHEN visitor_pts > home_pts THEN 'AWAY'
+
+        CASE
+            WHEN g.home_pts > g.visitor_pts THEN 'HOME'
+            WHEN g.visitor_pts > g.home_pts THEN 'AWAY'
             ELSE NULL
         END AS winner_location,
-        
-        ABS(home_pts - visitor_pts) AS point_differential,
-        home_pts + visitor_pts AS total_points,
-        
+
+        ABS(g.home_pts - g.visitor_pts) AS point_differential,
+        g.home_pts + g.visitor_pts AS total_points,
+
         -- Game Duration
-        game_duration,
-        CASE 
-            WHEN game_duration LIKE '%OT%' THEN TRUE
+        g.game_duration,
+
+        -- *** FIX: Replaced fragile string matching with a reliable check against scoring data ***
+        CASE
+            WHEN ot.had_overtime = 1 THEN TRUE
             ELSE FALSE
         END AS is_overtime,
-        
+
         -- URL
-        box_score_url,
-        
+        g.box_score_url,
+
         -- Metadata
-        created_at,
-        updated_at,
+        g.created_at,
+        g.updated_at,
         CURRENT_TIMESTAMP AS dbt_loaded_at
-        
-    FROM source_data
-    WHERE 
+
+    FROM source_data AS g
+
+    -- *** FIX: Join to the overtime data to get the reliable flag ***
+    LEFT JOIN overtime_games AS ot
+        ON g.game_id = ot.game_id
+
+    WHERE
         -- Data quality filters
-        game_id IS NOT NULL
-        AND date IS NOT NULL
-        AND home_team IS NOT NULL
-        AND visitor_team IS NOT NULL
+        g.game_id IS NOT NULL
+        AND g.date IS NOT NULL
+        AND g.home_team IS NOT NULL
+        AND g.visitor_team IS NOT NULL
 )
 
 SELECT * FROM cleaned

@@ -90,7 +90,7 @@ final AS (
         ON gd.arena_name = a.arena_name AND gd.arena_city = a.arena_city
 
     {% if is_incremental() %}
-    WHERE gd.game_date >= (SELECT MAX(game_date) FROM {{ this }}) - INTERVAL '3 days'
+    WHERE gd.game_date >= (SELECT MAX(game_date) FROM {{ this }}) - INTERVAL '30 days'
     {% endif %}
 )
 

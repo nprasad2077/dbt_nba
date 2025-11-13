@@ -25,6 +25,8 @@ dbt run --select tag:staging --project-dir /usr/app/dbt/nba_analytics
 
 dbt run --select intermediate --project-dir /usr/app/dbt/nba_analytics
 
+# dbt run --select int_team_performance --full-refresh --project-dir /usr/app/dbt/nba_analytics
+
 # dbt run --select int_games_enriched --project-dir /usr/app/dbt/nba_analytics
 
 # dbt run --select fct_player_game_stats --project-dir /usr/app/dbt/nba_analytics
