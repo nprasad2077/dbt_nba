@@ -124,3 +124,17 @@ exit
 `docker stop $(docker ps -q --filter network=dbt_nba_nba_network)`
 
 `dbt clean --project-dir /usr/app/dbt/nba_analytics`
+
+## Final
+
+```bash
+dbt seed --project-dir /usr/app/dbt/nba_analytics
+
+dbt run --select tag:staging --full-refresh --project-dir /usr/app/dbt/nba_analytics
+
+dbt run --select intermediate --full-refresh --project-dir /usr/app/dbt/nba_analytics
+
+dbt run --select tag:dimension --full-refresh --project-dir /usr/app/dbt/nba_analytics
+
+dbt run --select tag:facts --full-refresh --project-dir /usr/app/dbt/nba_analytics
+```
