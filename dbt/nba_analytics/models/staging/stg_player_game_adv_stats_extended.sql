@@ -28,6 +28,13 @@
 {% set usg_q3_threshold = 24.2 %}   -- Q3
 {% set usg_p95_threshold = 33.1 %} -- 95th percentile
 
+-- Box Plus/Minus (BPM) Thresholds
+{% set bpm_p5_threshold = -15.6 %}   -- 5th percentile
+{% set bpm_q1_threshold = -6.3 %}    -- Q1
+{% set bpm_median_threshold = -0.6 %} -- Median
+{% set bpm_q3_threshold = 5.0 %}     -- Q3
+{% set bpm_p95_threshold = 13.9 %}   -- 95th percentile
+
 -- =================================================================
 -- MODEL LOGIC
 -- =================================================================
@@ -105,7 +112,7 @@ cleaned AS (
             ELSE 'Q4'
         END AS minutes_quartile,
         
-        -- ENHANCED Usage Tier (combining best of both approaches)
+        -- ENHANCED Usage Tier
         CASE 
             -- First, handle cases with insufficient playing time
             WHEN minutes_played < {{ minutes_insufficient }} THEN 'Insufficient Minutes'
@@ -137,7 +144,7 @@ cleaned AS (
             ELSE 'Limited Role'
         END AS usage_tier,
 
-        -- Usage quartile (new analytical field)
+        -- Usage quartile
         CASE
             WHEN COALESCE(usg_percent, 0) < {{ usg_q1_threshold }} THEN 'Q1'
             WHEN COALESCE(usg_percent, 0) < {{ usg_median_threshold }} THEN 'Q2'
@@ -145,14 +152,37 @@ cleaned AS (
             ELSE 'Q4'
         END AS usage_quartile,
 
-        -- Impact tier
+        -- UPDATED Impact Tier with data-driven thresholds
         CASE 
+            -- First check for insufficient minutes
             WHEN minutes_played < {{ minutes_insufficient }} THEN 'Insufficient Minutes'
-            WHEN COALESCE(bpm, 0) >= 10 THEN 'Elite Impact'
-            WHEN COALESCE(bpm, 0) >= 5 THEN 'High Impact'
-            WHEN COALESCE(bpm, 0) >= 0 THEN 'Positive Impact'
-            ELSE 'Negative Impact'
+            
+            -- Elite Impact: Top 5% of BPM (>13.9)
+            WHEN COALESCE(bpm, 0) >= {{ bpm_p95_threshold }} THEN 'Elite Impact'
+            
+            -- High Impact: Top quartile (>5.0)
+            WHEN COALESCE(bpm, 0) >= {{ bpm_q3_threshold }} THEN 'High Impact'
+            
+            -- Positive Impact: Above median (>-0.6)
+            WHEN COALESCE(bpm, 0) >= {{ bpm_median_threshold }} THEN 'Positive Impact'
+            
+            -- Neutral Impact: Between median and Q1 (-6.3 to -0.6)
+            WHEN COALESCE(bpm, 0) >= {{ bpm_q1_threshold }} THEN 'Neutral Impact'
+            
+            -- Negative Impact: Between Q1 and 5th percentile (-15.6 to -6.3)
+            WHEN COALESCE(bpm, 0) >= {{ bpm_p5_threshold }} THEN 'Negative Impact'
+            
+            -- Very Negative Impact: Bottom 5% (< -15.6)
+            ELSE 'Very Negative Impact'
         END AS impact_tier,
+
+        -- BPM quartile for analytical purposes
+        CASE
+            WHEN COALESCE(bpm, 0) < {{ bpm_q1_threshold }} THEN 'Q1'
+            WHEN COALESCE(bpm, 0) < {{ bpm_median_threshold }} THEN 'Q2'
+            WHEN COALESCE(bpm, 0) < {{ bpm_q3_threshold }} THEN 'Q3'
+            ELSE 'Q4'
+        END AS bpm_quartile,
 
         -- Shooting efficiency tier
         CASE 
@@ -167,6 +197,14 @@ cleaned AS (
         -- BOOLEAN FLAGS
         -- =================================================================
         
+        -- UPDATED Minutes-based flags with proper categorization
+        minutes_played >= {{ p95_threshold }} AS is_extreme_minutes,  -- Top 5% (39+ minutes)
+        minutes_played >= {{ q3_threshold_cat }} AS is_starter_minutes,  -- Q3+ (32+ minutes)
+        minutes_played >= {{ q3_threshold_cat }} AND minutes_played < {{ p95_threshold }} AS is_normal_starter_minutes,  -- Q3-P95 (32-39 minutes)
+        minutes_played >= {{ median_threshold_cat }} AND minutes_played < {{ q3_threshold_cat }} AS is_rotation_minutes,  -- Median-Q3 (25-32 minutes)
+        minutes_played >= {{ q1_threshold_cat }} AND minutes_played < {{ median_threshold_cat }} AS is_bench_minutes,  -- Q1-Median (17-25 minutes)
+        minutes_played >= {{ q1_threshold_cat }} AS is_meaningful_minutes,  -- Q1+ (17+ minutes)
+        
         -- Player type flags (require meaningful minutes - Q1 threshold)
         minutes_played >= {{ q1_threshold_cat }} 
             AND COALESCE(ast_percent, 0) >= 20 
@@ -179,21 +217,46 @@ cleaned AS (
         minutes_played >= {{ q1_threshold_cat }}
             AND COALESCE(three_p_ar, 0) >= 0.4 
             AND COALESCE(d_rtg, 0) < 110 AS is_three_and_d,
-
-        -- Minutes-based flags
-        minutes_played >= {{ p95_threshold }} AS is_high_minutes_outlier,
-        minutes_played >= {{ q1_threshold_cat }} AND minutes_played < {{ q3_threshold_cat }} AS is_regular_rotation,
         
         -- Usage-based flags
-        COALESCE(usg_percent, 0) >= {{ usg_p95_threshold }} AS is_high_usage_player,
+        COALESCE(usg_percent, 0) >= {{ usg_p95_threshold }} AS is_extreme_usage,  -- Top 5%
+        COALESCE(usg_percent, 0) >= {{ usg_q3_threshold }} AS is_high_usage,  -- Q3+
+        COALESCE(usg_percent, 0) >= {{ usg_q3_threshold }} 
+            AND COALESCE(usg_percent, 0) < {{ usg_p95_threshold }} AS is_normal_high_usage,  -- Q3-P95
+        COALESCE(usg_percent, 0) >= {{ usg_median_threshold }} AS is_above_average_usage,  -- Median+
+        
+        -- Combined usage and minutes flags
         COALESCE(usg_percent, 0) >= {{ usg_q3_threshold }} 
             AND minutes_played >= {{ q3_threshold_cat }} AS is_primary_offensive_player,
+        COALESCE(usg_percent, 0) >= {{ usg_median_threshold }} 
+            AND minutes_played >= {{ median_threshold_cat }} AS is_significant_contributor,
         
-        -- Active player flag (for easy filtering)
+        -- Impact-based flags
+        COALESCE(bpm, 0) >= {{ bpm_p95_threshold }} AS is_elite_impact,  -- Top 5%
+        COALESCE(bpm, 0) >= {{ bpm_q3_threshold }} AS is_positive_impact,  -- Q3+
+        COALESCE(bpm, 0) >= {{ bpm_q3_threshold }} 
+            AND COALESCE(bpm, 0) < {{ bpm_p95_threshold }} AS is_normal_positive_impact,  -- Q3-P95
+        COALESCE(bpm, 0) >= {{ bpm_median_threshold }} AS is_above_average_impact,  -- Median+
+        COALESCE(bpm, 0) <= {{ bpm_p5_threshold }} AS is_very_negative_impact,  -- Bottom 5%
+        
+        -- Core active player flags (multiple definitions for flexibility)
+        -- Standard active player: Q1-Q3 minutes, P5-P95 usage, above P5 impact
         minutes_played >= {{ q1_threshold_cat }} 
-            AND minutes_played <= {{ p95_threshold }}
+            AND minutes_played < {{ q3_threshold_cat }}
             AND COALESCE(usg_percent, 0) >= {{ usg_p5_threshold }}
-            AND COALESCE(usg_percent, 0) <= {{ usg_p95_threshold }} AS is_active_player,
+            AND COALESCE(usg_percent, 0) < {{ usg_p95_threshold }}
+            AND COALESCE(bpm, 0) >= {{ bpm_p5_threshold }} AS is_standard_player,
+            
+        -- Core rotation player: Q1-P95 minutes (includes starters)
+        minutes_played >= {{ q1_threshold_cat }} 
+            AND minutes_played < {{ p95_threshold }}
+            AND COALESCE(usg_percent, 0) >= {{ usg_p5_threshold }}
+            AND COALESCE(bpm, 0) >= {{ bpm_p5_threshold }} AS is_core_rotation_player,
+            
+        -- Quality starter: Q3-P95 minutes with positive impact
+        minutes_played >= {{ q3_threshold_cat }} 
+            AND minutes_played < {{ p95_threshold }}
+            AND COALESCE(bpm, 0) >= {{ bpm_median_threshold }} AS is_quality_starter,
 
         -- Metadata
         created_at,
