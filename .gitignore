@@ -216,3 +216,4 @@ project_data_backup.tar.gz
 *.tar.gz # Optional: ignore all tar.gz files
 project_data_backup.tar.gz
 *.tar.gz
+dbt/profiles.yml

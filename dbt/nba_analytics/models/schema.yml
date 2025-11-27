@@ -1,0 +1,263 @@
+version: 2
+
+sources:
+  - name: raw_nba
+    description: Raw NBA data imported from source systems
+    database: nba_analytics
+    schema: public
+    # freshness:
+    #   warn_after: {count: 24, period: hour}
+    #   error_after: {count: 48, period: hour}
+    tables:
+      - name: games
+        description: Core game information including scores, teams, and venues
+        columns:
+          - name: game_id
+            description: Unique identifier for each game
+            tests:
+              - unique
+              - not_null
+          - name: date
+            description: Game date and time
+            tests:
+              - not_null
+          - name: is_playoff
+            description: Boolean flag for playoff games
+          - name: home_team
+            description: Home team abbreviation
+            tests:
+              - not_null
+          - name: visitor_team
+            description: Visiting team abbreviation
+            tests:
+              - not_null
+          - name: home_pts
+            description: Points scored by home team
+          - name: visitor_pts
+            description: Points scored by visiting team
+
+      - name: line_scores
+        description: Quarter-by-quarter scoring breakdown
+        columns:
+          - name: game_id
+            description: Foreign key to games table
+            tests:
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('raw_nba', 'games') # <-- CORRECTED
+                    field: game_id
+          - name: team
+            description: Team abbreviation
+            tests:
+              - not_null
+          - name: q1
+            description: First quarter points
+          - name: q2
+            description: Second quarter points
+          - name: q3
+            description: Third quarter points
+          - name: q4
+            description: Fourth quarter points
+          - name: ot1
+            description: First overtime points
+          - name: ot2
+            description: Second overtime points
+          - name: ot3
+            description: Third overtime points
+          - name: total
+            description: Total game points
+
+      - name: player_game_basic_stats
+        description: Basic player statistics for each game
+        columns:
+          - name: game_id
+            description: Foreign key to games table
+            tests:
+              - not_null
+          - name: player_id
+            description: Unique player identifier
+            tests:
+              - not_null
+          - name: player_name
+            description: Player's full name
+          - name: team
+            description: Team abbreviation
+          - name: mp
+            description: Minutes played (MM:SS format)
+          - name: pts
+            description: Points scored
+          - name: fg
+            description: Field goals made
+          - name: fga
+            description: Field goals attempted
+
+      - name: player_game_adv_stats
+        description: Advanced player statistics for each game
+        columns:
+          - name: game_id
+            description: Foreign key to games table
+            tests:
+              - not_null
+          - name: player_id
+            description: Unique player identifier
+            tests:
+              - not_null
+          - name: ts_percent
+            description: True shooting percentage
+          - name: usg_percent
+            description: Usage percentage
+          - name: o_rtg
+            description: Offensive rating (points per 100 possessions)
+          - name: d_rtg
+            description: Defensive rating (points allowed per 100 possessions)
+          - name: bpm
+            description: Box Plus/Minus
+
+      - name: team_game_basic_stats
+        description: Basic team statistics for each game
+        columns:
+          - name: game_id
+            description: Foreign key to games table
+            tests:
+              - not_null
+          - name: team
+            description: Team abbreviation
+            tests:
+              - not_null
+          - name: pts
+            description: Total points scored
+          - name: fg
+            description: Field goals made
+          - name: fga
+            description: Field goals attempted
+
+      - name: team_game_adv_stats
+        description: Advanced team statistics for each game
+        columns:
+          - name: game_id
+            description: Foreign key to games table
+            tests:
+              - not_null
+          - name: team
+            description: Team abbreviation
+            tests:
+              - not_null
+          - name: o_rtg
+            description: Offensive rating
+          - name: d_rtg
+            description: Defensive rating
+
+models:
+  - name: stg_games
+    description: Staged games data with cleaned fields and derived metrics
+    columns:
+      - name: game_id
+        description: Unique game identifier
+        tests:
+          - unique
+          - not_null
+      - name: game_date
+        description: Date of the game
+        tests:
+          - not_null
+      - name: season_year
+        description: Calendar year of the game
+      - name: season_start_year
+        description: Year when the season started (Oct-Jun season)
+      - name: winning_team
+        description: Team abbreviation of the winner
+      - name: point_differential
+        description: Absolute difference in final score
+      - name: is_overtime
+        description: Whether the game went to overtime
+
+  - name: stg_line_scores
+    description: Staged quarter-by-quarter scoring with momentum metrics
+    columns:
+      - name: game_id
+        description: Foreign key to games
+        tests:
+          - not_null
+      - name: team
+        description: Team abbreviation
+        tests:
+          - not_null
+      - name: first_half_points
+        description: Combined Q1 and Q2 points
+      - name: second_half_points
+        description: Combined Q3 and Q4 points
+      - name: regulation_points
+        description: Points in regulation (excludes OT)
+      - name: best_quarter
+        description: Quarter with highest scoring
+
+  - name: stg_player_game_basic_stats
+    description: Staged player basic stats with calculated metrics
+    columns:
+      - name: game_id
+        description: Foreign key to games
+        tests:
+          - not_null
+      - name: player_id
+        description: Unique player identifier
+        tests:
+          - not_null
+      - name: minutes_played
+        description: Minutes played as decimal
+      - name: is_double_double
+        description: Whether player achieved double-double
+      - name: is_triple_double
+        description: Whether player achieved triple-double
+
+  - name: stg_player_game_adv_stats
+    description: Staged player advanced stats with performance tiers
+    columns:
+      - name: game_id
+        description: Foreign key to games
+        tests:
+          - not_null
+      - name: player_id
+        description: Unique player identifier
+        tests:
+          - not_null
+      - name: net_rating
+        description: Offensive rating minus defensive rating
+      - name: shooting_efficiency_tier
+        description: Categorized shooting efficiency
+      - name: impact_tier
+        description: Overall impact categorization
+
+  - name: stg_team_game_basic_stats
+    description: Staged team basic stats with four factors
+    columns:
+      - name: game_id
+        description: Foreign key to games
+        tests:
+          - not_null
+      - name: team
+        description: Team abbreviation
+        tests:
+          - not_null
+      - name: pace
+        description: Estimated possessions per 48 minutes
+      - name: effective_fg_pct
+        description: Field goal percentage adjusted for 3-pointers
+
+  - name: stg_team_game_adv_stats
+    description: Staged team advanced stats with play style indicators
+    columns:
+      - name: game_id
+        description: Foreign key to games
+        tests:
+          - not_null
+      - name: team
+        description: Team abbreviation
+        tests:
+          - not_null
+      - name: net_rating
+        description: Point differential per 100 possessions
+      - name: offensive_tier
+        description: Offensive performance categorization
+      - name: defensive_tier
+        description: Defensive performance categorization
