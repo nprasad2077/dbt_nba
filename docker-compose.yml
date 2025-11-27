@@ -1,0 +1,103 @@
+---
+version: "3.8"
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nba_postgres
+    restart: unless-stopped
+    shm_size: 1g  # Increases the shared memory available to Postgres for parallel queries
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=en_US.utf8
+      POSTGRES_HOST_AUTH_METHOD: md5
+      # Note: Many of these env vars are overridden by your `command` below.
+      # It's better to manage them in one place (e.g., the command or a config file).
+      SHARED_BUFFERS: 256MB
+      WORK_MEM: 16MB
+      MAINTENANCE_WORK_MEM: 128MB
+      EFFECTIVE_CACHE_SIZE: 1GB
+      MAX_CONNECTIONS: 200
+      RANDOM_PAGE_COST: 1.1
+      EFFECTIVE_IO_CONCURRENCY: 200
+      MAX_WORKER_PROCESSES: 8
+      MAX_PARALLEL_WORKERS_PER_GATHER: 4
+      MAX_PARALLEL_WORKERS: 8
+    ports:
+      - "${DB_PORT:-5439}:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+      - ./backups:/backups
+    networks:
+      - nba_network
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    command: >
+      postgres -c shared_buffers=256MB -c work_mem=16MB -c
+      maintenance_work_mem=128MB -c effective_cache_size=1GB -c
+      max_connections=200 -c random_page_cost=1.1 -c
+      effective_io_concurrency=200 -c max_worker_processes=8 -c
+      max_parallel_workers_per_gather=4 -c max_parallel_workers=8 -c
+      log_statement=all -c log_duration=on -c log_min_duration_statement=100ms
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: nba_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    ports:
+      - 5050:80
+    volumes:
+      - ./data/pgadmin:/var/lib/pgadmin
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+    networks:
+      - nba_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+  dbt_runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nba_dbt_runner
+    environment:
+      DBT_PROFILES_DIR: /usr/app/dbt
+      DBT_PROJECT_DIR: /usr/app/dbt
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      DBT_SCHEMA: analytics
+      DBT_THREADS: 4
+    volumes:
+      - ./dbt:/usr/app/dbt
+      - ./logs:/usr/app/logs
+      - ./data/dbt_packages:/usr/app/dbt/dbt_packages
+      - ./data/dbt_target:/usr/app/dbt/target
+    networks:
+      - nba_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - dbt
+    command: tail -f /dev/null
+networks:
+  nba_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
