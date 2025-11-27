@@ -38,6 +38,14 @@
 {% set bpm_p90_threshold = 10.1 %}   -- 90th percentile
 {% set bpm_p95_threshold = 13.9 %}   -- 95th percentile
 
+-- Shooting Efficiency Thresholds
+{% set ts_p5_threshold = 1 %}
+{% set ts_q1_threshold = 40 %}
+{% set ts_median_threshold = 53 %}
+{% set ts_q3_threshold = 68 %}
+{% set ts_p90_threshold = 80 %}
+{% set ts_p95_threshold = 95 %}
+
 -- =================================================================
 -- MODEL LOGIC
 -- =================================================================
@@ -191,9 +199,9 @@ cleaned AS (
         -- Shooting efficiency tier
         CASE 
             WHEN minutes_played < {{ minutes_insufficient }} THEN 'Insufficient Minutes'
-            WHEN COALESCE(ts_percent, 0) >= 0.60 THEN 'Elite'
-            WHEN COALESCE(ts_percent, 0) >= 0.55 THEN 'Good'
-            WHEN COALESCE(ts_percent, 0) >= 0.50 THEN 'Average'
+            WHEN COALESCE(ts_percent, 0) >= 0.68 THEN 'Elite'
+            WHEN COALESCE(ts_percent, 0) >= 0.53 THEN 'Good'
+            WHEN COALESCE(ts_percent, 0) >= 0.40 THEN 'Average'
             ELSE 'Below Average'
         END AS shooting_efficiency_tier,
 
