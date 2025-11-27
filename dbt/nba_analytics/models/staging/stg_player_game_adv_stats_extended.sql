@@ -6,8 +6,11 @@
     )
 }}
 
--- Define minutes thresholds as variables for clarity and maintainability (Foundation from A)
--- We add the exact quantile values for the new `minutes_quartile` column (from B)
+-- =================================================================
+-- THRESHOLD DEFINITIONS
+-- =================================================================
+
+-- Minutes Played Thresholds (from previous analysis)
 {% set minutes_insufficient = 5 %}
 {% set p5_threshold = 7 %}         -- Based on 5th percentile of 6.87
 {% set q1_threshold_val = 16.68 %}
@@ -18,6 +21,17 @@
 {% set q3_threshold_cat = 32 %}    -- Rounded for categorization
 {% set p95_threshold = 39 %}       -- Based on 95th percentile of 39.25
 
+-- Usage Percentage Thresholds (from new analysis)
+{% set usg_p5_threshold = 7.3 %}    -- 5th percentile
+{% set usg_q1_threshold = 13.4 %}   -- Q1
+{% set usg_median_threshold = 18.4 %} -- Median
+{% set usg_q3_threshold = 24.2 %}   -- Q3
+{% set usg_p95_threshold = 33.1 %} -- 95th percentile
+
+-- =================================================================
+-- MODEL LOGIC
+-- =================================================================
+
 WITH source_data AS (
     SELECT * FROM {{ source('raw_nba', 'player_game_adv_stats') }}
     WHERE deleted_at IS NULL
@@ -26,7 +40,7 @@ WITH source_data AS (
 with_minutes AS (
     SELECT
         *,
-        -- Robust casting from Solution A
+        -- Robust casting for minutes played
         CASE 
             WHEN mp IS NOT NULL AND mp != '' AND mp LIKE '%:%' THEN
                 CAST(SPLIT_PART(mp, ':', 1) AS NUMERIC) + (CAST(SPLIT_PART(mp, ':', 2) AS NUMERIC) / 60.0)
@@ -67,9 +81,11 @@ cleaned AS (
         -- Derived Metric
         COALESCE(o_rtg, 0) - COALESCE(d_rtg, 0) AS net_rating,
         
-        -- Tiering & Categorization (Best of A & B)
+        -- =================================================================
+        -- TIERING & CATEGORIZATION
+        -- =================================================================
         
-        -- `minutes_based_role` - Adopting the more granular logic from Solution B
+        -- Minutes-based role
         CASE
             WHEN minutes_played >= {{ p95_threshold }} THEN 'Elite Minutes (Top 5%)'
             WHEN minutes_played >= {{ q3_threshold_cat }} THEN 'Starter'
@@ -80,7 +96,7 @@ cleaned AS (
             ELSE 'Insufficient Minutes'
         END AS minutes_based_role,
 
-        -- `minutes_quartile` - Excellent analytical column from Solution B
+        -- Minutes quartile
         CASE
             WHEN minutes_played < {{ minutes_insufficient }} THEN 'Insufficient'
             WHEN minutes_played < {{ q1_threshold_val }} THEN 'Q1'
@@ -89,15 +105,47 @@ cleaned AS (
             ELSE 'Q4'
         END AS minutes_quartile,
         
-        -- Other Tiers (Logic is similar, using variables for consistency)
+        -- ENHANCED Usage Tier (combining best of both approaches)
         CASE 
+            -- First, handle cases with insufficient playing time
             WHEN minutes_played < {{ minutes_insufficient }} THEN 'Insufficient Minutes'
-            WHEN usg_percent >= 25 AND minutes_played >= {{ q3_threshold_cat }} THEN 'Primary Option'
-            WHEN usg_percent >= 20 AND minutes_played >= {{ median_threshold_cat }} THEN 'Secondary Option'
-            WHEN minutes_played >= {{ q1_threshold_cat }} THEN 'Role Player'
-            ELSE 'Limited Minutes'
+            
+            -- Heliocentric Option: Elite usage (top 5%) with meaningful minutes
+            WHEN COALESCE(usg_percent, 0) >= {{ usg_p95_threshold }} 
+                AND minutes_played >= {{ q1_threshold_cat }} THEN 'Heliocentric Option'
+            
+            -- Primary Option: High usage (Q3+) with starter minutes
+            WHEN COALESCE(usg_percent, 0) >= {{ usg_q3_threshold }} 
+                AND minutes_played >= {{ q3_threshold_cat }} THEN 'Primary Option'
+            
+            -- Secondary Option: Above-median usage with key rotation minutes
+            WHEN COALESCE(usg_percent, 0) >= {{ usg_median_threshold }} 
+                AND minutes_played >= {{ median_threshold_cat }} THEN 'Secondary Option'
+            
+            -- Role Player: Above-Q1 usage with regular rotation minutes
+            WHEN COALESCE(usg_percent, 0) >= {{ usg_q1_threshold }} 
+                AND minutes_played >= {{ q1_threshold_cat }} THEN 'Role Player'
+            
+            -- Connector/Specialist: Regular minutes but low usage
+            WHEN minutes_played >= {{ q1_threshold_cat }} 
+                AND COALESCE(usg_percent, 0) >= {{ usg_p5_threshold }} THEN 'Connector/Specialist'
+            
+            -- Low Usage: Some minutes but very low usage
+            WHEN minutes_played >= {{ p5_threshold }} THEN 'Low Usage Player'
+            
+            -- Limited Role: Everything else
+            ELSE 'Limited Role'
         END AS usage_tier,
 
+        -- Usage quartile (new analytical field)
+        CASE
+            WHEN COALESCE(usg_percent, 0) < {{ usg_q1_threshold }} THEN 'Q1'
+            WHEN COALESCE(usg_percent, 0) < {{ usg_median_threshold }} THEN 'Q2'
+            WHEN COALESCE(usg_percent, 0) < {{ usg_q3_threshold }} THEN 'Q3'
+            ELSE 'Q4'
+        END AS usage_quartile,
+
+        -- Impact tier
         CASE 
             WHEN minutes_played < {{ minutes_insufficient }} THEN 'Insufficient Minutes'
             WHEN COALESCE(bpm, 0) >= 10 THEN 'Elite Impact'
@@ -106,7 +154,20 @@ cleaned AS (
             ELSE 'Negative Impact'
         END AS impact_tier,
 
-        -- Boolean Flags (Using Q1 as the "meaningful minutes" threshold)
+        -- Shooting efficiency tier
+        CASE 
+            WHEN minutes_played < {{ minutes_insufficient }} THEN 'Insufficient Minutes'
+            WHEN COALESCE(ts_percent, 0) >= 0.60 THEN 'Elite'
+            WHEN COALESCE(ts_percent, 0) >= 0.55 THEN 'Good'
+            WHEN COALESCE(ts_percent, 0) >= 0.50 THEN 'Average'
+            ELSE 'Below Average'
+        END AS shooting_efficiency_tier,
+
+        -- =================================================================
+        -- BOOLEAN FLAGS
+        -- =================================================================
+        
+        -- Player type flags (require meaningful minutes - Q1 threshold)
         minutes_played >= {{ q1_threshold_cat }} 
             AND COALESCE(ast_percent, 0) >= 20 
             AND COALESCE(trb_percent, 0) >= 15 AS is_versatile,
@@ -119,10 +180,20 @@ cleaned AS (
             AND COALESCE(three_p_ar, 0) >= 0.4 
             AND COALESCE(d_rtg, 0) < 110 AS is_three_and_d,
 
-        -- New boolean flags from Solution B, implemented with Jinja variables
+        -- Minutes-based flags
         minutes_played >= {{ p95_threshold }} AS is_high_minutes_outlier,
-        
         minutes_played >= {{ q1_threshold_cat }} AND minutes_played < {{ q3_threshold_cat }} AS is_regular_rotation,
+        
+        -- Usage-based flags
+        COALESCE(usg_percent, 0) >= {{ usg_p95_threshold }} AS is_high_usage_player,
+        COALESCE(usg_percent, 0) >= {{ usg_q3_threshold }} 
+            AND minutes_played >= {{ q3_threshold_cat }} AS is_primary_offensive_player,
+        
+        -- Active player flag (for easy filtering)
+        minutes_played >= {{ q1_threshold_cat }} 
+            AND minutes_played <= {{ p95_threshold }}
+            AND COALESCE(usg_percent, 0) >= {{ usg_p5_threshold }}
+            AND COALESCE(usg_percent, 0) <= {{ usg_p95_threshold }} AS is_active_player,
 
         -- Metadata
         created_at,
