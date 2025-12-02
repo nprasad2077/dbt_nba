@@ -19,7 +19,7 @@ adv_stats AS (
     SELECT
         s.*,
         map.team_abbr AS team_conformed
-    FROM {{ ref('stg_player_game_adv_stats') }} AS s
+    FROM {{ ref('stg_player_game_adv_stats_extended') }} AS s
     LEFT JOIN {{ ref('team_abbreviation_mappings') }} AS map
         ON s.team = map.source_abbr
 ),

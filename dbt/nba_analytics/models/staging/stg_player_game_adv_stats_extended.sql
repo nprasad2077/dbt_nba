@@ -220,15 +220,15 @@ cleaned AS (
         -- Player type flags (require meaningful minutes - Q1 threshold)
         minutes_played >= {{ q1_threshold_cat }} 
             AND COALESCE(ast_percent, 0) >= 20 
-            AND COALESCE(trb_percent, 0) >= 15 AS is_versatile,
+            AND COALESCE(trb_percent, 0) >= 13 AS is_versatile,
         
         minutes_played >= {{ q1_threshold_cat }}
-            AND (COALESCE(stl_percent, 0) >= 2.5 OR COALESCE(blk_percent, 0) >= 4)
-            AND COALESCE(d_rtg, 0) < 105 AS is_defensive_specialist,
+            AND (COALESCE(stl_percent, 0) >= 2.5 OR COALESCE(blk_percent, 0) >= 3)
+            AND COALESCE(d_rtg, 0) <= 110 AS is_defensive_specialist,
             
         minutes_played >= {{ q1_threshold_cat }}
             AND COALESCE(three_p_ar, 0) >= 0.4 
-            AND COALESCE(d_rtg, 0) < 110 AS is_three_and_d,
+            AND COALESCE(d_rtg, 0) <= 110 AS is_three_and_d,
         
         -- Usage-based flags
         COALESCE(usg_percent, 0) >= {{ usg_p90_threshold }} AS is_extreme_usage,  -- Top 10%
