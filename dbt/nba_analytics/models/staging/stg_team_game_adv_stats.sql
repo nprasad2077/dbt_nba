@@ -1,6 +1,6 @@
 {{
     config(
-        materialized='view',
+        materialized='table',
         schema='staging',
         alias='stg_team_game_adv_stats'
     )
@@ -51,22 +51,22 @@ cleaned AS (
         
         -- Performance Categories
         CASE 
-            WHEN COALESCE(o_rtg, 0) >= 115 THEN 'Elite Offense'
-            WHEN COALESCE(o_rtg, 0) >= 110 THEN 'Good Offense'
-            WHEN COALESCE(o_rtg, 0) >= 105 THEN 'Average Offense'
+            WHEN COALESCE(o_rtg, 0) >= 120 THEN 'Elite Offense'
+            WHEN COALESCE(o_rtg, 0) >= 112 THEN 'Good Offense'
+            WHEN COALESCE(o_rtg, 0) >= 104 THEN 'Average Offense'
             ELSE 'Below Average Offense'
         END AS offensive_tier,
         
         CASE 
-            WHEN COALESCE(d_rtg, 0) <= 105 THEN 'Elite Defense'
-            WHEN COALESCE(d_rtg, 0) <= 110 THEN 'Good Defense'
-            WHEN COALESCE(d_rtg, 0) <= 115 THEN 'Average Defense'
+            WHEN COALESCE(d_rtg, 0) <= 104 THEN 'Elite Defense'
+            WHEN COALESCE(d_rtg, 0) <= 112 THEN 'Good Defense'
+            WHEN COALESCE(d_rtg, 0) <= 120 THEN 'Average Defense'
             ELSE 'Below Average Defense'
         END AS defensive_tier,
         
         -- Play Style Indicators
         CASE 
-            WHEN COALESCE(three_p_ar, 0) >= 0.4 THEN 'Three Point Heavy'
+            WHEN COALESCE(three_p_ar, 0) >= 0.41 THEN 'Three Point Heavy'
             WHEN COALESCE(three_p_ar, 0) >= 0.3 THEN 'Balanced'
             ELSE 'Inside Focused'
         END AS shot_selection_style,
@@ -79,20 +79,20 @@ cleaned AS (
         
         -- Rebounding Dominance
         CASE 
-            WHEN COALESCE(orb_percent, 0) >= 30 THEN 'Elite Offensive Rebounding'
-            WHEN COALESCE(orb_percent, 0) >= 25 THEN 'Good Offensive Rebounding'
+            WHEN COALESCE(orb_percent, 0) >= 29 THEN 'Elite Offensive Rebounding'
+            WHEN COALESCE(orb_percent, 0) >= 24 THEN 'Good Offensive Rebounding'
             ELSE 'Average Offensive Rebounding'
         END AS offensive_rebounding_tier,
         
         CASE 
-            WHEN COALESCE(drb_percent, 0) >= 80 THEN 'Elite Defensive Rebounding'
-            WHEN COALESCE(drb_percent, 0) >= 75 THEN 'Good Defensive Rebounding'
+            WHEN COALESCE(drb_percent, 0) >= 81 THEN 'Elite Defensive Rebounding'
+            WHEN COALESCE(drb_percent, 0) >= 76 THEN 'Good Defensive Rebounding'
             ELSE 'Average Defensive Rebounding'
         END AS defensive_rebounding_tier,
         
         -- Turnover Control
         CASE 
-            WHEN COALESCE(tov_percent, 0) <= 12 THEN 'Excellent Ball Security'
+            WHEN COALESCE(tov_percent, 0) <= 12.5 THEN 'Excellent Ball Security'
             WHEN COALESCE(tov_percent, 0) <= 15 THEN 'Good Ball Security'
             ELSE 'Poor Ball Security'
         END AS ball_security_tier,
