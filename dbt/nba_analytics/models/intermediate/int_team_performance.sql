@@ -10,8 +10,11 @@ WITH basic_stats AS (
         s.*,
         map.team_abbr AS team_conformed
     FROM {{ ref('stg_team_game_basic_stats') }} AS s
-    LEFT JOIN {{ ref('team_abbreviation_mappings') }} AS map
-        ON s.team = map.source_abbr
+    LEFT JOIN {{ ref('team_maps') }} AS map
+        ON s.team = map.team_abbr
+    LEFT JOIN {{ ref('stg_games') }} AS g
+        ON s.game_id = g.game_id
+    WHERE (g.season_start_year >= map.start_year AND g.season_start_year < map.end_year)
 ),
 
 adv_stats AS (
@@ -19,8 +22,11 @@ adv_stats AS (
         s.*,
         map.team_abbr AS team_conformed
     FROM {{ ref('stg_team_game_adv_stats') }} AS s
-    LEFT JOIN {{ ref('team_abbreviation_mappings') }} AS map
-        ON s.team = map.source_abbr
+    LEFT JOIN {{ ref('team_maps') }} AS map
+        ON s.team = map.team_abbr
+    LEFT JOIN {{ ref('stg_games') }} AS g
+        ON s.game_id = g.game_id
+    WHERE (g.season_start_year >= map.start_year AND g.season_start_year < map.end_year)
 ),
 
 games AS (
@@ -33,9 +39,12 @@ games AS (
         visitor_map.team_abbr AS visitor_team_abbr,
         winning_map.team_abbr AS winning_team_abbr
     FROM {{ ref('stg_games') }} g
-    LEFT JOIN {{ ref('team_mappings') }} AS home_map ON g.home_team = home_map.full_name
-    LEFT JOIN {{ ref('team_mappings') }} AS visitor_map ON g.visitor_team = visitor_map.full_name
-    LEFT JOIN {{ ref('team_mappings') }} AS winning_map ON g.winning_team = winning_map.full_name
+    LEFT JOIN {{ ref('team_maps') }} AS home_map ON g.home_team = home_map.full_name
+    LEFT JOIN {{ ref('team_maps') }} AS visitor_map ON g.visitor_team = visitor_map.full_name
+    LEFT JOIN {{ ref('team_maps') }} AS winning_map ON g.winning_team = winning_map.full_name
+    WHERE (g.season_start_year >= home_map.start_year AND g.season_start_year < home_map.end_year)
+    AND (g.season_start_year >= visitor_map.start_year AND g.season_start_year < visitor_map.end_year)
+    AND (g.season_start_year >= winning_map.start_year AND g.season_start_year < winning_map.end_year)
 ),
 
 final AS (

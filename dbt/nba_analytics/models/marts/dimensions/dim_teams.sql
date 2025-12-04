@@ -10,7 +10,7 @@ WITH team_mappings AS (
     SELECT 
         team_abbr,
         full_name
-    FROM {{ ref('team_mappings') }}
+    FROM {{ ref('team_maps') }}
 )
 
 SELECT

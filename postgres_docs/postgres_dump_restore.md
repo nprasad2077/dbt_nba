@@ -21,7 +21,7 @@ docker exec nba_go-postgres-1 pg_dump -U nbago -Fc nba_db > ./nba_backup.dump
 ```
 
 ```bash
-docker exec nba_go-postgres-1 pg_dump -U nbago -Fc nba_db > ./2025.12_nba_backup.dump
+docker exec nba_go-postgres-1 pg_dump -U nbago -Fc nba_db > ./2025.12.03_nba_backup.dump
 ```
 
 ## pg_restore
