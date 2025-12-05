@@ -128,7 +128,7 @@ exit
 ## Final
 
 ```bash
-dbt seed --project-dir /usr/app/dbt/nba_analytics
+dbt seed --full-refresh --project-dir /usr/app/dbt/nba_analytics
 
 dbt run --select tag:staging --full-refresh --project-dir /usr/app/dbt/nba_analytics
 

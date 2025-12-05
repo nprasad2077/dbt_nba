@@ -72,12 +72,12 @@ final AS (
         
     -- *** FIX: CONFORM TEAM ABBREVIATIONS BEFORE JOINING TO DIMENSIONS ***
     -- Map the raw source abbreviation for the primary team to the conformed abbreviation
-    LEFT JOIN {{ ref('team_abbreviation_mappings') }} AS team_map
-        ON team_scores.team = team_map.source_abbr
+    LEFT JOIN {{ ref('team_maps') }} AS team_map
+        ON team_scores.team = team_map.team_abbr
 
     -- Map the raw source abbreviation for the opponent team to the conformed abbreviation
-    LEFT JOIN {{ ref('team_abbreviation_mappings') }} AS opponent_map
-        ON opponent_scores.team = opponent_map.source_abbr
+    LEFT JOIN {{ ref('team_maps') }} AS opponent_map
+        ON opponent_scores.team = opponent_map.team_abbr
 
     -- Now, join to dim_teams using the CONFORMED abbreviation
     LEFT JOIN {{ ref('dim_teams') }} AS t
