@@ -137,4 +137,6 @@ dbt run --select intermediate --full-refresh --project-dir /usr/app/dbt/nba_anal
 dbt run --select tag:dimension --full-refresh --project-dir /usr/app/dbt/nba_analytics
 
 dbt run --select tag:facts --full-refresh --project-dir /usr/app/dbt/nba_analytics
+
+dbt build --selector nba_pipeline --full-refresh --project-dir /usr/app/dbt/nba_analytics
 ```
