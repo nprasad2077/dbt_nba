@@ -2,7 +2,8 @@
     config(
         materialized='table',
         schema='staging',
-        alias='stg_player_game_adv_stats_extended'
+        alias='stg_player_game_adv_stats_extended',
+        tags=["staging"],
     )
 }}
 

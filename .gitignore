@@ -216,3 +216,7 @@ project_data_backup.tar.gz
 *.tar.gz # Optional: ignore all tar.gz files
 project_data_backup.tar.gz
 *.tar.gz
+
+
+postgres_docs/restore_dump_local.md
+postgres_docs/restore_dump_remote.md

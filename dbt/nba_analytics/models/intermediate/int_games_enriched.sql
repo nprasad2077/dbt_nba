@@ -31,7 +31,7 @@ arena_locations AS (
             arena_name,
             city AS arena_city,
             ROW_NUMBER() OVER (PARTITION BY arena_name ORDER BY city) as rn
-        FROM {{ ref('arena_mappings') }}
+        FROM {{ ref('arena_maps') }}
     ) AS sub
     WHERE rn = 1
 ),

@@ -1,67 +1,60 @@
+---
 version: 2
-
 models:
   - name: int_player_performance
-    description: "Unified model containing basic and advanced stats for each player in every game. Grain: one row per player per game."
+    description: "Unified model containing basic and advanced stats for each player
+      in every game. Grain: one row per player per game."
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - game_id
+            - player_id
     columns:
       - name: game_id
-        description: "Foreign key to the game."
+        description: Foreign key to the game.
         tests:
           - not_null
       - name: player_id
-        description: "Foreign key to the player."
+        description: Foreign key to the player.
         tests:
           - not_null
-      - name: unique_key
-        description: "Composite key of game_id and player_id to ensure uniqueness."
-        tests:
-          - unique
-        columns:
-          - game_id
-          - player_id
-          
   - name: int_team_performance
-    description: "Unified model containing basic and advanced stats for each team in every game. Grain: one row per team per game."
+    description: "Unified model containing basic and advanced stats for each team in
+      every game. Grain: one row per team per game."
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - game_id
+            - team
     columns:
       - name: game_id
-        description: "Foreign key to the game."
+        description: Foreign key to the game.
         tests:
           - not_null
       - name: team
-        description: "Team abbreviation."
+        description: Team abbreviation.
         tests:
           - not_null
-      - name: unique_key
-        description: "Composite key of game_id and team to ensure uniqueness."
-        tests:
-          - unique
-        columns:
-          - game_id
-          - team
-
   - name: int_games_enriched
-    description: "Game-level model enriched with detailed performance stats for both the home and visitor teams. Grain: one row per game."
+    description: "Game-level model enriched with detailed performance stats for both
+      the home and visitor teams. Grain: one row per game."
     columns:
       - name: game_id
-        description: "Primary key for the game."
+        description: Primary key for the game.
         tests:
           - unique
           - not_null
       - name: home_team
-        description: "Home team abbreviation, foreign key to int_team_performance."
+        description: Home team abbreviation, foreign key to int_team_performance.
         tests:
           - not_null
           - relationships:
-              # FIX: Nesting arguments under an 'arguments' key
-              arguments:
-                to: ref('int_team_performance')
-                field: team
+              to: ref('int_team_performance')
+              field: team
       - name: visitor_team
-        description: "Visiting team abbreviation, foreign key to int_team_performance."
+        description: Visiting team abbreviation, foreign key to int_team_performance.
         tests:
           - not_null
           - relationships:
-              # FIX: Nesting arguments under an 'arguments' key
-              arguments:
-                to: ref('int_team_performance')
-                field: team
+              to: ref('int_team_performance')
+              field: team
