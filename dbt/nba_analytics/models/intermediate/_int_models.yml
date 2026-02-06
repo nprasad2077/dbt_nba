@@ -58,3 +58,36 @@ models:
           - relationships:
               to: ref('int_team_performance')
               field: team
+  - name: int_player_shots_enriched
+    description: >
+      Shot chart data enriched with game_id resolution and conformed team
+      abbreviations. Joins shots to games using date + team + opponent matching.
+      Grain: one row per shot attempt. Includes has_game_match flag for quality.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - shot_id
+    columns:
+      - name: shot_id
+        description: Unique shot identifier
+        tests:
+          - unique
+          - not_null
+      - name: game_id
+        description: >
+          Resolved game_id from matching on date/team/opponent.
+          NULL if no matching game was found in the games table.
+      - name: player_id
+        description: Basketball-Reference player ID
+        tests:
+          - not_null
+      - name: team
+        description: Conformed team abbreviation
+        tests:
+          - not_null
+      - name: opponent
+        description: Conformed opponent abbreviation
+        tests:
+          - not_null
+      - name: has_game_match
+        description: Whether this shot was successfully matched to a game_id
