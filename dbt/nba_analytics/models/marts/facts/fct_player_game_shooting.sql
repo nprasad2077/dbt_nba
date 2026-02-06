@@ -16,12 +16,17 @@
 {#
     Grain: One row per player per game.
 
-    Aggregates individual shot chart data to the game level, providing
-    shooting breakdowns by zone, quarter, and clutch context.
+    Aggregates individual shot chart data AND box-score free throws
+    to the game level, providing complete scoring breakdowns.
+
+    Total points = FG points (from shot chart) + FT points (from box score)
+
     This model complements fct_player_game_stats by adding spatial
-    and contextual shooting detail that box scores do not capture.
+    and contextual shooting detail that box scores do not capture,
+    while also arriving at accurate total points.
 
-
+    NOTE: Only games with shot chart coverage are included.
+    This is NOT a complete record of all player games.
 #}
 
 WITH shots AS (
@@ -49,26 +54,47 @@ game_agg AS (
         MIN(game_result) AS game_result,
 
         -- ==========================================
-        -- OVERALL SHOOTING
+        -- COMPLETE SCORING TOTALS (FG + FT)
         -- ==========================================
-        COUNT(*) AS total_shots,
-        SUM(shot_made_flag) AS total_makes,
-        SUM(shot_missed_flag) AS total_misses,
-        CASE WHEN COUNT(*) > 0
-            THEN SUM(shot_made_flag)::NUMERIC / COUNT(*)::NUMERIC
-            ELSE 0
-        END AS overall_fg_pct,
-        SUM(points_generated) AS total_points_from_shots,
+        SUM(points_generated) AS total_points,
+        COUNT(*) AS total_shot_attempts,
+        SUM(shot_made_flag) AS total_shots_made,
 
         -- ==========================================
-        -- BY SHOT TYPE
+        -- FIELD GOAL TOTALS (shot_chart source only)
+        -- ==========================================
+        COUNT(*) FILTER (WHERE shot_source = 'shot_chart') AS fg_attempts,
+        SUM(shot_made_flag) FILTER (WHERE shot_source = 'shot_chart') AS fg_makes,
+        SUM(shot_missed_flag) FILTER (WHERE shot_source = 'shot_chart') AS fg_misses,
+        CASE WHEN COUNT(*) FILTER (WHERE shot_source = 'shot_chart') > 0
+            THEN SUM(shot_made_flag) FILTER (WHERE shot_source = 'shot_chart')::NUMERIC
+                 / COUNT(*) FILTER (WHERE shot_source = 'shot_chart')::NUMERIC
+            ELSE 0
+        END AS fg_pct,
+        SUM(points_generated) FILTER (WHERE shot_source = 'shot_chart') AS fg_points,
+
+        -- ==========================================
+        -- FREE THROW TOTALS (box_score_ft source)
+        -- ==========================================
+        COUNT(*) FILTER (WHERE shot_source = 'box_score_ft') AS ft_attempts,
+        SUM(shot_made_flag) FILTER (WHERE shot_source = 'box_score_ft') AS ft_makes,
+        SUM(shot_missed_flag) FILTER (WHERE shot_source = 'box_score_ft') AS ft_misses,
+        CASE WHEN COUNT(*) FILTER (WHERE shot_source = 'box_score_ft') > 0
+            THEN SUM(shot_made_flag) FILTER (WHERE shot_source = 'box_score_ft')::NUMERIC
+                 / COUNT(*) FILTER (WHERE shot_source = 'box_score_ft')::NUMERIC
+            ELSE 0
+        END AS ft_pct,
+        SUM(points_generated) FILTER (WHERE shot_source = 'box_score_ft') AS ft_points,
+
+        -- ==========================================
+        -- BY SHOT TYPE (FG breakdown)
         -- ==========================================
         -- Two-pointers
-        COUNT(*) FILTER (WHERE is_three_pointer = FALSE) AS two_point_attempts,
-        SUM(shot_made_flag) FILTER (WHERE is_three_pointer = FALSE) AS two_point_makes,
-        CASE WHEN COUNT(*) FILTER (WHERE is_three_pointer = FALSE) > 0
-            THEN SUM(shot_made_flag) FILTER (WHERE is_three_pointer = FALSE)::NUMERIC
-                 / COUNT(*) FILTER (WHERE is_three_pointer = FALSE)::NUMERIC
+        COUNT(*) FILTER (WHERE is_three_pointer = FALSE AND shot_source = 'shot_chart') AS two_point_attempts,
+        SUM(shot_made_flag) FILTER (WHERE is_three_pointer = FALSE AND shot_source = 'shot_chart') AS two_point_makes,
+        CASE WHEN COUNT(*) FILTER (WHERE is_three_pointer = FALSE AND shot_source = 'shot_chart') > 0
+            THEN SUM(shot_made_flag) FILTER (WHERE is_three_pointer = FALSE AND shot_source = 'shot_chart')::NUMERIC
+                 / COUNT(*) FILTER (WHERE is_three_pointer = FALSE AND shot_source = 'shot_chart')::NUMERIC
             ELSE 0
         END AS two_point_fg_pct,
 
@@ -82,7 +108,7 @@ game_agg AS (
         END AS three_point_fg_pct,
 
         -- ==========================================
-        -- BY DISTANCE ZONE
+        -- BY DISTANCE ZONE (FG only — excludes FTs)
         -- ==========================================
         COUNT(*) FILTER (WHERE shot_distance_zone = 'At Rim (0-3 ft)') AS at_rim_attempts,
         SUM(shot_made_flag) FILTER (WHERE shot_distance_zone = 'At Rim (0-3 ft)') AS at_rim_makes,
@@ -104,59 +130,88 @@ game_agg AS (
         COUNT(*) FILTER (WHERE shot_distance_zone IN ('Three Point (24-27 ft)', 'Deep Three (28+ ft)')) AS beyond_arc_attempts,
         SUM(shot_made_flag) FILTER (WHERE shot_distance_zone IN ('Three Point (24-27 ft)', 'Deep Three (28+ ft)')) AS beyond_arc_makes,
 
-        -- ==========================================
-        -- BY QUARTER
-        -- ==========================================
-        COUNT(*) FILTER (WHERE quarter_number = 1) AS q1_attempts,
-        SUM(shot_made_flag) FILTER (WHERE quarter_number = 1) AS q1_makes,
-        COUNT(*) FILTER (WHERE quarter_number = 2) AS q2_attempts,
-        SUM(shot_made_flag) FILTER (WHERE quarter_number = 2) AS q2_makes,
-        COUNT(*) FILTER (WHERE quarter_number = 3) AS q3_attempts,
-        SUM(shot_made_flag) FILTER (WHERE quarter_number = 3) AS q3_makes,
-        COUNT(*) FILTER (WHERE quarter_number = 4) AS q4_attempts,
-        SUM(shot_made_flag) FILTER (WHERE quarter_number = 4) AS q4_makes,
+        -- Free Throw zone (for completeness in zone analysis)
+        COUNT(*) FILTER (WHERE shot_distance_zone = 'Free Throw (15 ft)') AS free_throw_line_attempts,
+        SUM(shot_made_flag) FILTER (WHERE shot_distance_zone = 'Free Throw (15 ft)') AS free_throw_line_makes,
 
         -- ==========================================
-        -- CLUTCH SHOOTING
+        -- BY QUARTER (FG only — FTs have quarter_number = 0)
         -- ==========================================
-        COUNT(*) FILTER (WHERE is_clutch_shot = TRUE) AS clutch_attempts,
-        SUM(shot_made_flag) FILTER (WHERE is_clutch_shot = TRUE) AS clutch_makes,
+        COUNT(*) FILTER (WHERE quarter_number = 1 AND shot_source = 'shot_chart') AS q1_fg_attempts,
+        SUM(shot_made_flag) FILTER (WHERE quarter_number = 1 AND shot_source = 'shot_chart') AS q1_fg_makes,
+        COUNT(*) FILTER (WHERE quarter_number = 2 AND shot_source = 'shot_chart') AS q2_fg_attempts,
+        SUM(shot_made_flag) FILTER (WHERE quarter_number = 2 AND shot_source = 'shot_chart') AS q2_fg_makes,
+        COUNT(*) FILTER (WHERE quarter_number = 3 AND shot_source = 'shot_chart') AS q3_fg_attempts,
+        SUM(shot_made_flag) FILTER (WHERE quarter_number = 3 AND shot_source = 'shot_chart') AS q3_fg_makes,
+        COUNT(*) FILTER (WHERE quarter_number = 4 AND shot_source = 'shot_chart') AS q4_fg_attempts,
+        SUM(shot_made_flag) FILTER (WHERE quarter_number = 4 AND shot_source = 'shot_chart') AS q4_fg_makes,
+
+        -- ==========================================
+        -- CLUTCH SHOOTING (FG only — FTs lack timing)
+        -- ==========================================
+        COUNT(*) FILTER (WHERE is_clutch_shot = TRUE) AS clutch_fg_attempts,
+        SUM(shot_made_flag) FILTER (WHERE is_clutch_shot = TRUE) AS clutch_fg_makes,
         CASE WHEN COUNT(*) FILTER (WHERE is_clutch_shot = TRUE) > 0
             THEN SUM(shot_made_flag) FILTER (WHERE is_clutch_shot = TRUE)::NUMERIC
                  / COUNT(*) FILTER (WHERE is_clutch_shot = TRUE)::NUMERIC
             ELSE 0
         END AS clutch_fg_pct,
-        SUM(points_generated) FILTER (WHERE is_clutch_shot = TRUE) AS clutch_points,
+        SUM(points_generated) FILTER (WHERE is_clutch_shot = TRUE) AS clutch_fg_points,
 
         -- ==========================================
-        -- LEADING vs TRAILING
+        -- LEADING vs TRAILING (FG only — FTs lack score context)
         -- ==========================================
-        COUNT(*) FILTER (WHERE team_had_lead = TRUE) AS shots_while_leading,
-        SUM(shot_made_flag) FILTER (WHERE team_had_lead = TRUE) AS makes_while_leading,
-        COUNT(*) FILTER (WHERE team_had_lead = FALSE) AS shots_while_trailing,
-        SUM(shot_made_flag) FILTER (WHERE team_had_lead = FALSE) AS makes_while_trailing,
+        COUNT(*) FILTER (WHERE team_had_lead = TRUE AND shot_source = 'shot_chart') AS fg_while_leading,
+        SUM(shot_made_flag) FILTER (WHERE team_had_lead = TRUE AND shot_source = 'shot_chart') AS fg_makes_while_leading,
+        COUNT(*) FILTER (WHERE team_had_lead = FALSE AND shot_source = 'shot_chart') AS fg_while_trailing,
+        SUM(shot_made_flag) FILTER (WHERE team_had_lead = FALSE AND shot_source = 'shot_chart') AS fg_makes_while_trailing,
 
         -- ==========================================
-        -- SHOT DISTRIBUTION RATIOS
+        -- SHOT DISTRIBUTION RATIOS (FG only)
         -- ==========================================
-        CASE WHEN COUNT(*) > 0
-            THEN COUNT(*) FILTER (WHERE is_three_pointer = TRUE)::NUMERIC / COUNT(*)::NUMERIC
+        CASE WHEN COUNT(*) FILTER (WHERE shot_source = 'shot_chart') > 0
+            THEN COUNT(*) FILTER (WHERE is_three_pointer = TRUE)::NUMERIC
+                 / COUNT(*) FILTER (WHERE shot_source = 'shot_chart')::NUMERIC
             ELSE 0
         END AS three_point_rate,
 
-        CASE WHEN COUNT(*) > 0
-            THEN COUNT(*) FILTER (WHERE shot_distance_zone = 'At Rim (0-3 ft)')::NUMERIC / COUNT(*)::NUMERIC
+        CASE WHEN COUNT(*) FILTER (WHERE shot_source = 'shot_chart') > 0
+            THEN COUNT(*) FILTER (WHERE shot_distance_zone = 'At Rim (0-3 ft)')::NUMERIC
+                 / COUNT(*) FILTER (WHERE shot_source = 'shot_chart')::NUMERIC
             ELSE 0
         END AS at_rim_rate,
 
-        CASE WHEN COUNT(*) > 0
-            THEN COUNT(*) FILTER (WHERE shot_distance_zone IN ('Mid Range (11-16 ft)', 'Long Mid Range (17-23 ft)'))::NUMERIC
-                 / COUNT(*)::NUMERIC
+        CASE WHEN COUNT(*) FILTER (WHERE shot_source = 'shot_chart') > 0
+            THEN COUNT(*) FILTER (
+                    WHERE shot_distance_zone IN ('Mid Range (11-16 ft)', 'Long Mid Range (17-23 ft)')
+                 )::NUMERIC
+                 / COUNT(*) FILTER (WHERE shot_source = 'shot_chart')::NUMERIC
             ELSE 0
         END AS mid_range_rate,
 
-        -- Average shot distance
-        AVG(distance_ft) AS avg_shot_distance_ft
+        -- Free throw rate (FTA / FGA) — a key Four Factors metric
+        CASE WHEN COUNT(*) FILTER (WHERE shot_source = 'shot_chart') > 0
+            THEN COUNT(*) FILTER (WHERE shot_source = 'box_score_ft')::NUMERIC
+                 / COUNT(*) FILTER (WHERE shot_source = 'shot_chart')::NUMERIC
+            ELSE 0
+        END AS free_throw_rate,
+
+        -- Average FG shot distance
+        AVG(distance_ft) FILTER (WHERE shot_source = 'shot_chart') AS avg_fg_distance_ft,
+
+        -- True Shooting Percentage: PTS / (2 * (FGA + 0.44 * FTA))
+        CASE WHEN (
+                COUNT(*) FILTER (WHERE shot_source = 'shot_chart')
+                + 0.44 * COUNT(*) FILTER (WHERE shot_source = 'box_score_ft')
+            ) > 0
+            THEN SUM(points_generated)::NUMERIC / (
+                2.0 * (
+                    COUNT(*) FILTER (WHERE shot_source = 'shot_chart')
+                    + 0.44 * COUNT(*) FILTER (WHERE shot_source = 'box_score_ft')
+                )
+            )
+            ELSE 0
+        END AS true_shooting_pct
 
     FROM shots
     GROUP BY game_id, player_id, team, opponent
@@ -182,12 +237,29 @@ final AS (
         ga.team_location,
         ga.game_result,
 
-        -- Overall Shooting
-        ga.total_shots,
-        ga.total_makes,
-        ga.total_misses,
-        ga.overall_fg_pct,
-        ga.total_points_from_shots,
+        -- ==========================================
+        -- COMPLETE SCORING TOTALS
+        -- ==========================================
+        ga.total_points,
+        ga.total_shot_attempts,
+        ga.total_shots_made,
+
+        -- Field Goal Totals
+        ga.fg_attempts,
+        ga.fg_makes,
+        ga.fg_misses,
+        ga.fg_pct,
+        ga.fg_points,
+
+        -- Free Throw Totals
+        ga.ft_attempts,
+        ga.ft_makes,
+        ga.ft_misses,
+        ga.ft_pct,
+        ga.ft_points,
+
+        -- True Shooting %
+        ga.true_shooting_pct,
 
         -- By Shot Type
         ga.two_point_attempts,
@@ -209,36 +281,39 @@ final AS (
         ga.long_mid_range_makes,
         ga.beyond_arc_attempts,
         ga.beyond_arc_makes,
+        ga.free_throw_line_attempts,
+        ga.free_throw_line_makes,
 
-        -- By Quarter
-        ga.q1_attempts,
-        ga.q1_makes,
-        ga.q2_attempts,
-        ga.q2_makes,
-        ga.q3_attempts,
-        ga.q3_makes,
-        ga.q4_attempts,
-        ga.q4_makes,
+        -- By Quarter (FG only)
+        ga.q1_fg_attempts,
+        ga.q1_fg_makes,
+        ga.q2_fg_attempts,
+        ga.q2_fg_makes,
+        ga.q3_fg_attempts,
+        ga.q3_fg_makes,
+        ga.q4_fg_attempts,
+        ga.q4_fg_makes,
 
-        -- Clutch Shooting
-        ga.clutch_attempts,
-        ga.clutch_makes,
+        -- Clutch Shooting (FG only)
+        ga.clutch_fg_attempts,
+        ga.clutch_fg_makes,
         ga.clutch_fg_pct,
-        ga.clutch_points,
+        ga.clutch_fg_points,
 
-        -- Leading vs Trailing
-        ga.shots_while_leading,
-        ga.makes_while_leading,
-        ga.shots_while_trailing,
-        ga.makes_while_trailing,
+        -- Leading vs Trailing (FG only)
+        ga.fg_while_leading,
+        ga.fg_makes_while_leading,
+        ga.fg_while_trailing,
+        ga.fg_makes_while_trailing,
 
-        -- Shot Profile
+        -- Shot Profile Ratios
         ga.three_point_rate,
         ga.at_rim_rate,
         ga.mid_range_rate,
-        ga.avg_shot_distance_ft,
+        ga.free_throw_rate,
+        ga.avg_fg_distance_ft,
 
-        -- Shot Profile Classification
+        -- Shot Profile Classification (based on FG distribution)
         CASE
             WHEN ga.three_point_rate >= 0.50 THEN 'Perimeter Heavy'
             WHEN ga.at_rim_rate >= 0.50 THEN 'Rim Attacker'
@@ -246,6 +321,14 @@ final AS (
             WHEN ga.three_point_rate >= 0.35 AND ga.at_rim_rate >= 0.30 THEN 'Modern (Rim & Three)'
             ELSE 'Balanced'
         END AS shot_profile_type,
+
+        -- Scoring Method Classification
+        CASE
+            WHEN ga.ft_attempts = 0 THEN 'No FTs'
+            WHEN ga.ft_points::NUMERIC / NULLIF(ga.total_points, 0)::NUMERIC >= 0.40 THEN 'FT Dependent'
+            WHEN ga.ft_points::NUMERIC / NULLIF(ga.total_points, 0)::NUMERIC >= 0.25 THEN 'High FT Volume'
+            ELSE 'Field Goal Driven'
+        END AS scoring_method_type,
 
         -- Game Date for incremental logic
         CAST(ga.game_date AS DATE) AS game_date

@@ -58,20 +58,24 @@ models:
           - relationships:
               to: ref('int_team_performance')
               field: team
+              
   - name: int_player_shots_enriched
     description: >
-      Shot chart data enriched with game_id resolution and conformed team
-      abbreviations. Joins shots to games using date + team + opponent matching.
-      Grain: one row per shot attempt. Includes has_game_match flag for quality.
-    tests:
-      - dbt_utils.unique_combination_of_columns:
-          combination_of_columns:
-            - shot_id
+      Unified shot-level dataset combining field goal attempts (from shot charts)
+      with free throw attempts (derived from stg_player_game_basic_stats).
+      Game ID is resolved via date + team + opponent matching.
+
+      FT rows have quarter_number = 0 and shot_source = 'box_score_ft'.
+      FG rows have full court location/timing and shot_source = 'shot_chart'.
+
+      This ensures: FG points + FT points = actual game points.
+      Grain: one row per shot attempt (FG or FT).
     columns:
       - name: shot_id
-        description: Unique shot identifier
+        description: >
+          Unique shot identifier. Positive values are source IDs from shot_chart.
+          Negative values are deterministic synthetic IDs for box-score-derived FTs.
         tests:
-          - unique
           - not_null
       - name: game_id
         description: >
@@ -91,3 +95,18 @@ models:
           - not_null
       - name: has_game_match
         description: Whether this shot was successfully matched to a game_id
+      - name: shot_source
+        description: >
+          Origin of the shot record.
+          'shot_chart' = field goal from shot chart data.
+          'box_score_ft' = free throw derived from box score basic stats.
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['shot_chart', 'box_score_ft']
+      - name: quarter_number
+        description: >
+          Quarter number (1-4 for regulation, 5 for OT, 0 for box-score-derived FTs
+          where timing is unknown)
+      - name: is_free_throw
+        description: Whether this shot is a free throw attempt

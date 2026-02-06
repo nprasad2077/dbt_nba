@@ -26,7 +26,6 @@ cleaned AS (
         season AS season_year,
 
         -- Date Parsing: Convert text date like 'Jun 9,2017' to a proper DATE
-        -- Handle potential formatting variations
         CASE
             WHEN date IS NOT NULL AND date != '' THEN
                 TO_DATE(TRIM(date), 'Mon DD,YYYY')
@@ -36,8 +35,6 @@ cleaned AS (
 
         -- Derive season_start_year for joining to the rest of the model
         -- NBA seasons span Oct of year N to Jun of year N+1
-        -- If the game month is Oct-Dec, season_start_year = that year
-        -- If the game month is Jan-Sep, season_start_year = that year - 1
         CASE
             WHEN date IS NOT NULL AND date != '' THEN
                 CASE
@@ -92,6 +89,7 @@ cleaned AS (
             WHEN shot_type = '3-pointer' THEN TRUE
             ELSE FALSE
         END AS is_three_pointer,
+        FALSE AS is_free_throw,
         COALESCE(distance_ft, 0) AS distance_ft,
 
         -- Shot Distance Zones
