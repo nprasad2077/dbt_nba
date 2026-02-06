@@ -147,6 +147,59 @@ sources:
             description: Offensive rating
           - name: d_rtg
             description: Defensive rating
+      - name: player_shot_charts
+        description: >
+          Individual shot-level data from NBA player shot charts.
+          Contains shot location (top/left coordinates), result, shot type,
+          score context, and timing for each shot attempt.
+          NOTE: Coverage is incomplete — not every player or game is included.
+          The dataset is being updated incrementally.
+        columns:
+          - name: id
+            description: Unique identifier for each shot record
+            tests:
+              - unique
+              - not_null
+          - name: player_id
+            description: Basketball-Reference player ID (e.g., irvinky01)
+            tests:
+              - not_null
+          - name: season
+            description: Season year (e.g., 2017 for the 2016-17 season playoffs or 2017 offseason context)
+          - name: date
+            description: Game date as text string (e.g., 'Jun 9,2017')
+            tests:
+              - not_null
+          - name: qtr
+            description: Quarter of the shot (e.g., '1st Qtr', '2nd Qtr')
+          - name: time_remaining
+            description: Time remaining in the quarter (MM:SS format)
+          - name: top
+            description: Y-coordinate of shot location on the court diagram (pixels from top)
+          - name: left
+            description: X-coordinate of shot location on the court diagram (pixels from left)
+          - name: player_name
+            description: Player ID repeated (matches player_id field)
+          - name: result
+            description: Whether the shot was made (true) or missed (false)
+          - name: shot_type
+            description: Type of shot (e.g., '2-pointer', '3-pointer')
+          - name: distance_ft
+            description: Distance of the shot in feet
+          - name: lead
+            description: Whether the shooting team was in the lead at the time of the shot
+          - name: team_score
+            description: Shooting team score at the time of the shot
+          - name: opponent_team_score
+            description: Opponent team score at the time of the shot
+          - name: opponent
+            description: Opponent team abbreviation (e.g., 'GSW')
+            tests:
+              - not_null
+          - name: team
+            description: Shooting player's team abbreviation (e.g., 'CLE')
+            tests:
+              - not_null
 
 models:
   - name: stg_games

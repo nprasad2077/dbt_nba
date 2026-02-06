@@ -140,3 +140,9 @@ dbt run --select tag:facts --full-refresh --project-dir /usr/app/dbt/nba_analyti
 
 dbt build --selector nba_pipeline --full-refresh --project-dir /usr/app/dbt/nba_analytics
 ```
+
+### Final Selector
+
+```bash
+dbt build --selector nba_pipeline --full-refresh --project-dir /usr/app/dbt/nba_analytics
+```

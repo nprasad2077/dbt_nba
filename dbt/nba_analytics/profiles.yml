@@ -1,0 +1,38 @@
+nba_analytics:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: localhost  # Use 'postgres' if running dbt inside Docker container
+      port: 5438
+      user: nba_admin
+      pass: nba_secure_password_2024
+      dbname: nba_analytics
+      schema: analytics_dev
+      threads: 4
+      keepalives_idle: 0
+      search_path: "analytics_dev, public"
+      
+    prod:
+      type: postgres
+      host: localhost  # Use 'postgres' if running dbt inside Docker container
+      port: 5438
+      user: nba_admin
+      pass: nba_secure_password_2024
+      dbname: nba_analytics
+      schema: analytics
+      threads: 8
+      keepalives_idle: 0
+      search_path: "analytics, public"
+      
+    test:
+      type: postgres
+      host: localhost  # Use 'postgres' if running dbt inside Docker container
+      port: 5438
+      user: nba_admin
+      pass: nba_secure_password_2024
+      dbname: nba_analytics
+      schema: analytics_test
+      threads: 2
+      keepalives_idle: 0
+      search_path: "analytics_test, public"
