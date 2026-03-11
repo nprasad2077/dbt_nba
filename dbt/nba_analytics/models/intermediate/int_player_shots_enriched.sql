@@ -1,7 +1,8 @@
 {{
     config(
         materialized='table',
-        schema='intermediate'
+        schema='intermediate',
+        tags=["intermediate"]
     )
 }}
 
@@ -30,13 +31,6 @@ WITH shot_charts AS (
     FROM {{ ref('stg_player_shot_charts') }}
 ),
 
-team_abbr_map AS (
-    SELECT
-        source_abbr,
-        team_abbr AS conformed_abbr
-    FROM {{ ref('team_abbreviation_mappings') }}
-),
-
 games AS (
     SELECT
         g.game_id,
@@ -63,16 +57,22 @@ games AS (
       AND (g.season_start_year >= winning_map.start_year AND g.season_start_year < winning_map.end_year)
 ),
 
+-- *** FIX: Use team_maps instead of team_abbreviation_mappings to conform
+-- shot chart abbreviations, matching the pattern used by all other models. ***
 shots_conformed AS (
     SELECT
         sc.*,
-        COALESCE(tm.conformed_abbr, sc.team_abbr_raw) AS team_conformed,
-        COALESCE(opp.conformed_abbr, sc.opponent_abbr_raw) AS opponent_conformed
+        COALESCE(tm.team_abbr, sc.team_abbr_raw) AS team_conformed,
+        COALESCE(opp.team_abbr, sc.opponent_abbr_raw) AS opponent_conformed
     FROM shot_charts AS sc
-    LEFT JOIN team_abbr_map AS tm
-        ON sc.team_abbr_raw = tm.source_abbr
-    LEFT JOIN team_abbr_map AS opp
-        ON sc.opponent_abbr_raw = opp.source_abbr
+    LEFT JOIN {{ ref('team_maps') }} AS tm
+        ON sc.team_abbr_raw = tm.team_abbr
+        AND sc.season_start_year >= tm.start_year
+        AND sc.season_start_year < tm.end_year
+    LEFT JOIN {{ ref('team_maps') }} AS opp
+        ON sc.opponent_abbr_raw = opp.team_abbr
+        AND sc.season_start_year >= opp.start_year
+        AND sc.season_start_year < opp.end_year
 ),
 
 shots_with_game AS (
