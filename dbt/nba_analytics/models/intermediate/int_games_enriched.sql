@@ -1,7 +1,8 @@
 {{
     config(
         materialized='table',
-        schema='intermediate'
+        schema='intermediate',
+        tags=["intermediate"]
     )
 }}
 

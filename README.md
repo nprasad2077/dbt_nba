@@ -130,6 +130,8 @@ exit
 ```bash
 dbt seed --full-refresh --project-dir /usr/app/dbt/nba_analytics
 
+dbt run --select +fct_player_shots --full-refresh --project-dir /usr/app/dbt/nba_analytics
+
 dbt run --select tag:staging --full-refresh --project-dir /usr/app/dbt/nba_analytics
 
 dbt run --select intermediate --full-refresh --project-dir /usr/app/dbt/nba_analytics
@@ -138,5 +140,11 @@ dbt run --select tag:dimension --full-refresh --project-dir /usr/app/dbt/nba_ana
 
 dbt run --select tag:facts --full-refresh --project-dir /usr/app/dbt/nba_analytics
 
+dbt build --selector nba_pipeline --full-refresh --project-dir /usr/app/dbt/nba_analytics
+```
+
+### Final Selector
+
+```bash
 dbt build --selector nba_pipeline --full-refresh --project-dir /usr/app/dbt/nba_analytics
 ```

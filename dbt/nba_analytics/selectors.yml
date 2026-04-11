@@ -6,9 +6,13 @@ selectors:
       union:
         - method: tag
           value: staging
+        - method: tag
+          value: intermediate
         - method: path
           value: models/intermediate
         - method: tag
           value: dimension
         - method: tag
           value: facts
+        - method: tag
+          value: marts

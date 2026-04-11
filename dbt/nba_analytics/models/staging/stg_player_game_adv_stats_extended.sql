@@ -7,45 +7,24 @@
     )
 }}
 
--- =================================================================
--- THRESHOLD DEFINITIONS
--- =================================================================
+{#
+    Extended player advanced stats with dynamic, per-season tiering.
 
--- Minutes Played Thresholds (from previous analysis)
+    Instead of hardcoded thresholds that apply uniformly across all seasons,
+    this model joins to stg_season_thresholds to obtain percentile breakpoints
+    computed from each seasons own data distribution.
+
+    This means a "Primary Option" in the 2015-16 season is defined relative to
+    2015-16 usage/minutes distributions, and likewise for 2022-23, etc.
+
+    The only hardcoded constant is the minimum-minutes floor (5 minutes),
+    which is a business rule rather than a statistical threshold.
+#}
+
+-- =================================================================
+-- BUSINESS RULE CONSTANTS
+-- =================================================================
 {% set minutes_insufficient = 5 %}
-{% set p5_threshold = 6 %}         -- Based on 5th percentile of 6.87
-{% set q1_threshold_val = 16.18 %}
-{% set q1_threshold_cat = 16 %}     -- Rounded for categorization
-{% set median_threshold_val = 24.38 %}
-{% set median_threshold_cat = 24 %}  -- Rounded for categorization
-{% set q3_threshold_val = 32.18 %}
-{% set q3_threshold_cat = 32 %}    -- Rounded for categorization
-{% set p90_threshold = 36 %}      -- 90th percentile
-{% set p95_threshold = 39 %}       -- Based on 95th percentile of 39.25
-
--- Usage Percentage Thresholds (from new analysis)
-{% set usg_p5_threshold = 7.3 %}    -- 5th percentile
-{% set usg_q1_threshold = 13.4 %}   -- Q1
-{% set usg_median_threshold = 18.4 %} -- Median
-{% set usg_q3_threshold = 24.2 %}   -- Q3
-{% set usg_p90_threshold = 30.2 %} -- 90th percentile
-{% set usg_p95_threshold = 33.1 %} -- 95th percentile
-
--- Box Plus/Minus (BPM) Thresholds
-{% set bpm_p5_threshold = -15.6 %}   -- 5th percentile
-{% set bpm_q1_threshold = -6.3 %}    -- Q1
-{% set bpm_median_threshold = -0.6 %} -- Median
-{% set bpm_q3_threshold = 4.8 %}     -- Q3
-{% set bpm_p90_threshold = 10.1 %}   -- 90th percentile
-{% set bpm_p95_threshold = 13.9 %}   -- 95th percentile
-
--- Shooting Efficiency Thresholds
-{% set ts_p5_threshold = 1 %}
-{% set ts_q1_threshold = 40 %}
-{% set ts_median_threshold = 53 %}
-{% set ts_q3_threshold = 68 %}
-{% set ts_p90_threshold = 80 %}
-{% set ts_p95_threshold = 95 %}
 
 -- =================================================================
 -- MODEL LOGIC
@@ -56,102 +35,121 @@ WITH source_data AS (
     WHERE deleted_at IS NULL
 ),
 
+games AS (
+    SELECT
+        game_id,
+        season_start_year
+    FROM {{ ref('stg_games') }}
+),
+
 with_minutes AS (
     SELECT
-        *,
+        sd.*,
+        g.season_start_year,
         -- Robust casting for minutes played
         CASE 
-            WHEN mp IS NOT NULL AND mp != '' AND mp LIKE '%:%' THEN
-                CAST(SPLIT_PART(mp, ':', 1) AS NUMERIC) + (CAST(SPLIT_PART(mp, ':', 2) AS NUMERIC) / 60.0)
-            WHEN mp IS NOT NULL AND mp != '' THEN
-                CASE WHEN mp ~ '^[0-9\.]+$' THEN CAST(mp AS NUMERIC) ELSE 0 END
+            WHEN sd.mp IS NOT NULL AND sd.mp != '' AND sd.mp LIKE '%:%' THEN
+                CAST(SPLIT_PART(sd.mp, ':', 1) AS NUMERIC)
+                + (CAST(SPLIT_PART(sd.mp, ':', 2) AS NUMERIC) / 60.0)
+            WHEN sd.mp IS NOT NULL AND sd.mp != '' AND sd.mp ~ '^[0-9\.]+$' THEN
+                CAST(sd.mp AS NUMERIC)
             ELSE 0
         END AS minutes_played
-    FROM source_data
+    FROM source_data AS sd
+    LEFT JOIN games AS g
+        ON sd.game_id = g.game_id
+),
+
+season_thresholds AS (
+    SELECT * FROM {{ ref('stg_season_thresholds') }}
 ),
 
 cleaned AS (
     SELECT
-        -- Keys & Base Info
-        game_id,
-        player_id,
-        team,
-        player_name,
-        mp AS minutes_played_str,
-        minutes_played,
-        
-        -- Base Metrics
-        COALESCE(ts_percent, 0) AS true_shooting_pct,
-        COALESCE(efg_percent, 0) AS effective_fg_pct,
-        COALESCE(three_p_ar, 0) AS three_point_attempt_rate,
-        COALESCE(f_tr, 0) AS free_throw_rate,
-        COALESCE(orb_percent, 0) AS offensive_rebound_pct,
-        COALESCE(drb_percent, 0) AS defensive_rebound_pct,
-        COALESCE(trb_percent, 0) AS total_rebound_pct,
-        COALESCE(ast_percent, 0) AS assist_pct,
-        COALESCE(stl_percent, 0) AS steal_pct,
-        COALESCE(blk_percent, 0) AS block_pct,
-        COALESCE(tov_percent, 0) AS turnover_pct,
-        COALESCE(usg_percent, 0) AS usage_pct,
-        COALESCE(o_rtg, 0) AS offensive_rating,
-        COALESCE(d_rtg, 0) AS defensive_rating,
-        COALESCE(bpm, 0) AS box_plus_minus,
-        
-        -- Derived Metric
-        COALESCE(o_rtg, 0) - COALESCE(d_rtg, 0) AS net_rating,
+        -- =================================================================
+        -- KEYS & BASE INFO
+        -- =================================================================
+        wm.game_id,
+        wm.player_id,
+        wm.team,
+        wm.player_name,
+        wm.mp AS minutes_played_str,
+        wm.minutes_played,
         
         -- =================================================================
-        -- TIERING & CATEGORIZATION
+        -- BASE METRICS
+        -- =================================================================
+        COALESCE(wm.ts_percent, 0) AS true_shooting_pct,
+        COALESCE(wm.efg_percent, 0) AS effective_fg_pct,
+        COALESCE(wm.three_p_ar, 0) AS three_point_attempt_rate,
+        COALESCE(wm.f_tr, 0) AS free_throw_rate,
+        COALESCE(wm.orb_percent, 0) AS offensive_rebound_pct,
+        COALESCE(wm.drb_percent, 0) AS defensive_rebound_pct,
+        COALESCE(wm.trb_percent, 0) AS total_rebound_pct,
+        COALESCE(wm.ast_percent, 0) AS assist_pct,
+        COALESCE(wm.stl_percent, 0) AS steal_pct,
+        COALESCE(wm.blk_percent, 0) AS block_pct,
+        COALESCE(wm.tov_percent, 0) AS turnover_pct,
+        COALESCE(wm.usg_percent, 0) AS usage_pct,
+        COALESCE(wm.o_rtg, 0) AS offensive_rating,
+        COALESCE(wm.d_rtg, 0) AS defensive_rating,
+        COALESCE(wm.bpm, 0) AS box_plus_minus,
+        
+        -- Derived Metric
+        COALESCE(wm.o_rtg, 0) - COALESCE(wm.d_rtg, 0) AS net_rating,
+        
+        -- =================================================================
+        -- TIERING & CATEGORIZATION (dynamic per-season thresholds)
         -- =================================================================
         
         -- Minutes-based role
         CASE
-            WHEN minutes_played >= {{ p95_threshold }} THEN 'Elite Minutes (Top 5%)'
-            WHEN minutes_played >= {{ p90_threshold }} THEN 'Elite Minutes (Top 10%)'
-            WHEN minutes_played >= {{ q3_threshold_cat }} THEN 'Starter'
-            WHEN minutes_played >= {{ median_threshold_cat }} THEN 'Key Rotation'
-            WHEN minutes_played >= {{ q1_threshold_cat }} THEN 'Regular Rotation'
-            WHEN minutes_played >= {{ p5_threshold }} THEN 'Deep Bench'
-            WHEN minutes_played >= {{ minutes_insufficient }} THEN 'Garbage Time'
+            WHEN wm.minutes_played >= t.min_p95 THEN 'Elite Minutes (Top 5%)'
+            WHEN wm.minutes_played >= t.min_p90 THEN 'Elite Minutes (Top 10%)'
+            WHEN wm.minutes_played >= t.min_q3 THEN 'Starter'
+            WHEN wm.minutes_played >= t.min_median THEN 'Key Rotation'
+            WHEN wm.minutes_played >= t.min_q1 THEN 'Regular Rotation'
+            WHEN wm.minutes_played >= t.min_p5 THEN 'Deep Bench'
+            WHEN wm.minutes_played >= {{ minutes_insufficient }} THEN 'Garbage Time'
             ELSE 'Insufficient Minutes'
         END AS minutes_based_role,
 
         -- Minutes quartile
         CASE
-            WHEN minutes_played < {{ minutes_insufficient }} THEN 'Insufficient'
-            WHEN minutes_played < {{ q1_threshold_val }} THEN 'Q1'
-            WHEN minutes_played < {{ median_threshold_val }} THEN 'Q2'
-            WHEN minutes_played < {{ q3_threshold_val }} THEN 'Q3'
+            WHEN wm.minutes_played < {{ minutes_insufficient }} THEN 'Insufficient'
+            WHEN wm.minutes_played < t.min_q1 THEN 'Q1'
+            WHEN wm.minutes_played < t.min_median THEN 'Q2'
+            WHEN wm.minutes_played < t.min_q3 THEN 'Q3'
             ELSE 'Q4'
         END AS minutes_quartile,
         
         -- ENHANCED Usage Tier
         CASE 
             -- First, handle cases with insufficient playing time
-            WHEN minutes_played < {{ minutes_insufficient }} THEN 'Insufficient Minutes'
+            WHEN wm.minutes_played < {{ minutes_insufficient }} THEN 'Insufficient Minutes'
             
             -- Heliocentric Option: Elite usage (top 10%) with meaningful minutes
-            WHEN COALESCE(usg_percent, 0) >= {{ usg_p90_threshold }} 
-                AND minutes_played >= {{ q1_threshold_cat }} THEN 'Heliocentric Option'
+            WHEN COALESCE(wm.usg_percent, 0) >= t.usg_p90 
+                AND wm.minutes_played >= t.min_q1 THEN 'Heliocentric Option'
             
             -- Primary Option: High usage (Q3+) with starter minutes
-            WHEN COALESCE(usg_percent, 0) >= {{ usg_q3_threshold }} 
-                AND minutes_played >= {{ q3_threshold_cat }} THEN 'Primary Option'
+            WHEN COALESCE(wm.usg_percent, 0) >= t.usg_q3 
+                AND wm.minutes_played >= t.min_q3 THEN 'Primary Option'
             
             -- Secondary Option: Above-median usage with key rotation minutes
-            WHEN COALESCE(usg_percent, 0) >= {{ usg_median_threshold }} 
-                AND minutes_played >= {{ median_threshold_cat }} THEN 'Secondary Option'
+            WHEN COALESCE(wm.usg_percent, 0) >= t.usg_median 
+                AND wm.minutes_played >= t.min_median THEN 'Secondary Option'
             
             -- Role Player: Above-Q1 usage with regular rotation minutes
-            WHEN COALESCE(usg_percent, 0) >= {{ usg_q1_threshold }} 
-                AND minutes_played >= {{ q1_threshold_cat }} THEN 'Role Player'
+            WHEN COALESCE(wm.usg_percent, 0) >= t.usg_q1 
+                AND wm.minutes_played >= t.min_q1 THEN 'Role Player'
             
             -- Connector/Specialist: Regular minutes but low usage
-            WHEN minutes_played >= {{ q1_threshold_cat }} 
-                AND COALESCE(usg_percent, 0) >= {{ usg_p5_threshold }} THEN 'Connector/Specialist'
+            WHEN wm.minutes_played >= t.min_q1 
+                AND COALESCE(wm.usg_percent, 0) >= t.usg_p5 THEN 'Connector/Specialist'
             
             -- Low Usage: Some minutes but very low usage
-            WHEN minutes_played >= {{ p5_threshold }} THEN 'Low Usage Player'
+            WHEN wm.minutes_played >= t.min_p5 THEN 'Low Usage Player'
             
             -- Limited Role: Everything else
             ELSE 'Limited Role'
@@ -159,127 +157,119 @@ cleaned AS (
 
         -- Usage quartile
         CASE
-            WHEN COALESCE(usg_percent, 0) < {{ usg_q1_threshold }} THEN 'Q1'
-            WHEN COALESCE(usg_percent, 0) < {{ usg_median_threshold }} THEN 'Q2'
-            WHEN COALESCE(usg_percent, 0) < {{ usg_q3_threshold }} THEN 'Q3'
+            WHEN COALESCE(wm.usg_percent, 0) < t.usg_q1 THEN 'Q1'
+            WHEN COALESCE(wm.usg_percent, 0) < t.usg_median THEN 'Q2'
+            WHEN COALESCE(wm.usg_percent, 0) < t.usg_q3 THEN 'Q3'
             ELSE 'Q4'
         END AS usage_quartile,
 
-        -- UPDATED Impact Tier with data-driven thresholds
+        -- Impact Tier (data-driven per season)
         CASE 
-            -- First check for insufficient minutes
-            WHEN minutes_played < {{ minutes_insufficient }} THEN 'Insufficient Minutes'
-            
-            -- Elite Impact: Top 10% of BPM (>13.9)
-            WHEN COALESCE(bpm, 0) >= {{ bpm_p90_threshold }} THEN 'Elite Impact'
-            
-            -- High Impact: Top quartile (>5.0)
-            WHEN COALESCE(bpm, 0) >= {{ bpm_q3_threshold }} THEN 'High Impact'
-            
-            -- Positive Impact: Above median (>-0.6)
-            WHEN COALESCE(bpm, 0) >= {{ bpm_median_threshold }} THEN 'Positive Impact'
-            
-            -- Neutral Impact: Between median and Q1 (-6.3 to -0.6)
-            WHEN COALESCE(bpm, 0) >= {{ bpm_q1_threshold }} THEN 'Neutral Impact'
-            
-            -- Negative Impact: Between Q1 and 5th percentile (-15.6 to -6.3)
-            WHEN COALESCE(bpm, 0) >= {{ bpm_p5_threshold }} THEN 'Negative Impact'
-            
-            -- Very Negative Impact: Bottom 5% (< -15.6)
+            WHEN wm.minutes_played < {{ minutes_insufficient }} THEN 'Insufficient Minutes'
+            WHEN COALESCE(wm.bpm, 0) >= t.bpm_p90 THEN 'Elite Impact'
+            WHEN COALESCE(wm.bpm, 0) >= t.bpm_q3 THEN 'High Impact'
+            WHEN COALESCE(wm.bpm, 0) >= t.bpm_median THEN 'Positive Impact'
+            WHEN COALESCE(wm.bpm, 0) >= t.bpm_q1 THEN 'Neutral Impact'
+            WHEN COALESCE(wm.bpm, 0) >= t.bpm_p5 THEN 'Negative Impact'
             ELSE 'Very Negative Impact'
         END AS impact_tier,
 
-        -- BPM quartile for analytical purposes
+        -- BPM quartile
         CASE
-            WHEN COALESCE(bpm, 0) < {{ bpm_q1_threshold }} THEN 'Q1'
-            WHEN COALESCE(bpm, 0) < {{ bpm_median_threshold }} THEN 'Q2'
-            WHEN COALESCE(bpm, 0) < {{ bpm_q3_threshold }} THEN 'Q3'
+            WHEN COALESCE(wm.bpm, 0) < t.bpm_q1 THEN 'Q1'
+            WHEN COALESCE(wm.bpm, 0) < t.bpm_median THEN 'Q2'
+            WHEN COALESCE(wm.bpm, 0) < t.bpm_q3 THEN 'Q3'
             ELSE 'Q4'
         END AS bpm_quartile,
 
-        -- Shooting efficiency tier
+        -- Shooting efficiency tier (dynamic per season)
         CASE 
-            WHEN minutes_played < {{ minutes_insufficient }} THEN 'Insufficient Minutes'
-            WHEN COALESCE(ts_percent, 0) >= 0.68 THEN 'Elite'
-            WHEN COALESCE(ts_percent, 0) >= 0.53 THEN 'Good'
-            WHEN COALESCE(ts_percent, 0) >= 0.40 THEN 'Average'
+            WHEN wm.minutes_played < {{ minutes_insufficient }} THEN 'Insufficient Minutes'
+            WHEN COALESCE(wm.ts_percent, 0) >= t.ts_q3 THEN 'Elite'
+            WHEN COALESCE(wm.ts_percent, 0) >= t.ts_median THEN 'Good'
+            WHEN COALESCE(wm.ts_percent, 0) >= t.ts_q1 THEN 'Average'
             ELSE 'Below Average'
         END AS shooting_efficiency_tier,
 
         -- =================================================================
-        -- BOOLEAN FLAGS
+        -- BOOLEAN FLAGS (dynamic per-season thresholds)
         -- =================================================================
         
-        -- UPDATED Minutes-based flags with proper categorization
-        minutes_played >= {{ p90_threshold }} AS is_extreme_minutes,  -- Top 10% (39+ minutes)
-        minutes_played >= {{ q3_threshold_cat }} AS is_starter_minutes,  -- Q3+ (32+ minutes)
-        minutes_played >= {{ q3_threshold_cat }} AND minutes_played < {{ p90_threshold }} AS is_normal_starter_minutes,  -- Q3-p90 (32-39 minutes)
-        minutes_played >= {{ median_threshold_cat }} AND minutes_played < {{ q3_threshold_cat }} AS is_rotation_minutes,  -- Median-Q3 (25-32 minutes)
-        minutes_played >= {{ q1_threshold_cat }} AND minutes_played < {{ median_threshold_cat }} AS is_bench_minutes,  -- Q1-Median (17-25 minutes)
-        minutes_played >= {{ q1_threshold_cat }} AS is_meaningful_minutes,  -- Q1+ (17+ minutes)
+        -- Minutes-based flags
+        wm.minutes_played >= t.min_p90 AS is_extreme_minutes,
+        wm.minutes_played >= t.min_q3 AS is_starter_minutes,
+        wm.minutes_played >= t.min_q3 
+            AND wm.minutes_played < t.min_p90 AS is_normal_starter_minutes,
+        wm.minutes_played >= t.min_median 
+            AND wm.minutes_played < t.min_q3 AS is_rotation_minutes,
+        wm.minutes_played >= t.min_q1 
+            AND wm.minutes_played < t.min_median AS is_bench_minutes,
+        wm.minutes_played >= t.min_q1 AS is_meaningful_minutes,
         
         -- Player type flags (require meaningful minutes - Q1 threshold)
-        minutes_played >= {{ q1_threshold_cat }} 
-            AND COALESCE(ast_percent, 0) >= 20 
-            AND COALESCE(trb_percent, 0) >= 13 AS is_versatile,
+        wm.minutes_played >= t.min_q1 
+            AND COALESCE(wm.ast_percent, 0) >= 20 
+            AND COALESCE(wm.trb_percent, 0) >= 13 AS is_versatile,
         
-        minutes_played >= {{ q1_threshold_cat }}
-            AND (COALESCE(stl_percent, 0) >= 2.5 OR COALESCE(blk_percent, 0) >= 3)
-            AND COALESCE(d_rtg, 0) <= 110 AS is_defensive_specialist,
+        wm.minutes_played >= t.min_q1
+            AND (COALESCE(wm.stl_percent, 0) >= 2.5 OR COALESCE(wm.blk_percent, 0) >= 3)
+            AND COALESCE(wm.d_rtg, 0) <= 110 AS is_defensive_specialist,
             
-        minutes_played >= {{ q1_threshold_cat }}
-            AND COALESCE(three_p_ar, 0) >= 0.4 
-            AND COALESCE(d_rtg, 0) <= 110 AS is_three_and_d,
+        wm.minutes_played >= t.min_q1
+            AND COALESCE(wm.three_p_ar, 0) >= 0.4 
+            AND COALESCE(wm.d_rtg, 0) <= 110 AS is_three_and_d,
         
         -- Usage-based flags
-        COALESCE(usg_percent, 0) >= {{ usg_p90_threshold }} AS is_extreme_usage,  -- Top 10%
-        COALESCE(usg_percent, 0) >= {{ usg_q3_threshold }} AS is_high_usage,  -- Q3+
-        COALESCE(usg_percent, 0) >= {{ usg_q3_threshold }} 
-            AND COALESCE(usg_percent, 0) < {{ usg_p90_threshold }} AS is_normal_high_usage,  -- Q3-P90
-        COALESCE(usg_percent, 0) >= {{ usg_median_threshold }} AS is_above_average_usage,  -- Median+
+        COALESCE(wm.usg_percent, 0) >= t.usg_p90 AS is_extreme_usage,
+        COALESCE(wm.usg_percent, 0) >= t.usg_q3 AS is_high_usage,
+        COALESCE(wm.usg_percent, 0) >= t.usg_q3 
+            AND COALESCE(wm.usg_percent, 0) < t.usg_p90 AS is_normal_high_usage,
+        COALESCE(wm.usg_percent, 0) >= t.usg_median AS is_above_average_usage,
         
         -- Combined usage and minutes flags
-        COALESCE(usg_percent, 0) >= {{ usg_q3_threshold }} 
-            AND minutes_played >= {{ q3_threshold_cat }} AS is_primary_offensive_player,
-        COALESCE(usg_percent, 0) >= {{ usg_median_threshold }} 
-            AND minutes_played >= {{ median_threshold_cat }} AS is_significant_contributor,
+        COALESCE(wm.usg_percent, 0) >= t.usg_q3 
+            AND wm.minutes_played >= t.min_q3 AS is_primary_offensive_player,
+        COALESCE(wm.usg_percent, 0) >= t.usg_median 
+            AND wm.minutes_played >= t.min_median AS is_significant_contributor,
         
         -- Impact-based flags
-        COALESCE(bpm, 0) >= {{ bpm_p90_threshold }} AS is_elite_impact,  -- Top 10%
-        COALESCE(bpm, 0) >= {{ bpm_q3_threshold }} AS is_positive_impact,  -- Q3+
-        COALESCE(bpm, 0) >= {{ bpm_q3_threshold }} 
-            AND COALESCE(bpm, 0) < {{ bpm_p90_threshold }} AS is_normal_positive_impact,  -- Q3-P90
-        COALESCE(bpm, 0) >= {{ bpm_median_threshold }} AS is_above_average_impact,  -- Median+
-        COALESCE(bpm, 0) <= {{ bpm_p5_threshold }} AS is_very_negative_impact,  -- Bottom 5%
+        COALESCE(wm.bpm, 0) >= t.bpm_p90 AS is_elite_impact,
+        COALESCE(wm.bpm, 0) >= t.bpm_q3 AS is_positive_impact,
+        COALESCE(wm.bpm, 0) >= t.bpm_q3 
+            AND COALESCE(wm.bpm, 0) < t.bpm_p90 AS is_normal_positive_impact,
+        COALESCE(wm.bpm, 0) >= t.bpm_median AS is_above_average_impact,
+        COALESCE(wm.bpm, 0) <= t.bpm_p5 AS is_very_negative_impact,
         
-        -- Core active player flags (multiple definitions for flexibility)
-        -- Standard active player: Q1-Q3 minutes, P5-p90 usage, above P5 impact
-        minutes_played >= {{ q1_threshold_cat }} 
-            AND minutes_played < {{ q3_threshold_cat }}
-            AND COALESCE(usg_percent, 0) >= {{ usg_p5_threshold }}
-            AND COALESCE(usg_percent, 0) < {{ usg_p90_threshold }}
-            AND COALESCE(bpm, 0) >= {{ bpm_p5_threshold }} AS is_standard_player,
+        -- Core active player flags
+        -- Standard active player: Q1-Q3 minutes, P5-P90 usage, above P5 impact
+        wm.minutes_played >= t.min_q1 
+            AND wm.minutes_played < t.min_q3
+            AND COALESCE(wm.usg_percent, 0) >= t.usg_p5
+            AND COALESCE(wm.usg_percent, 0) < t.usg_p90
+            AND COALESCE(wm.bpm, 0) >= t.bpm_p5 AS is_standard_player,
             
         -- Core rotation player: Q1-P90 minutes (includes starters)
-        minutes_played >= {{ q1_threshold_cat }} 
-            AND minutes_played < {{ p90_threshold }}
-            AND COALESCE(usg_percent, 0) >= {{ usg_p5_threshold }}
-            AND COALESCE(bpm, 0) >= {{ bpm_p5_threshold }} AS is_core_rotation_player,
+        wm.minutes_played >= t.min_q1 
+            AND wm.minutes_played < t.min_p90
+            AND COALESCE(wm.usg_percent, 0) >= t.usg_p5
+            AND COALESCE(wm.bpm, 0) >= t.bpm_p5 AS is_core_rotation_player,
             
         -- Quality starter: Q3-P90 minutes with positive impact
-        minutes_played >= {{ q3_threshold_cat }} 
-            AND minutes_played < {{ p90_threshold }}
-            AND COALESCE(bpm, 0) >= {{ bpm_median_threshold }} AS is_quality_starter,
+        wm.minutes_played >= t.min_q3 
+            AND wm.minutes_played < t.min_p90
+            AND COALESCE(wm.bpm, 0) >= t.bpm_median AS is_quality_starter,
 
         -- Metadata
-        created_at,
-        updated_at,
+        wm.created_at,
+        wm.updated_at,
         CURRENT_TIMESTAMP AS dbt_loaded_at
         
-    FROM with_minutes
+    FROM with_minutes AS wm
+    LEFT JOIN season_thresholds AS t
+        ON wm.season_start_year = t.season_start_year
     WHERE 
-        game_id IS NOT NULL
-        AND player_id IS NOT NULL
+        wm.game_id IS NOT NULL
+        AND wm.player_id IS NOT NULL
 )
 
 SELECT * FROM cleaned
